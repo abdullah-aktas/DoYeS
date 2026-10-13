@@ -22,7 +22,7 @@ class DashboardView(ft.Column):
         self.mobile_layout = False
         self.content_area = ft.Container(expand=True, padding=10)
 
-        self.navigation_buttons = ft.Wrap(run_spacing=10, spacing=10)
+        self.navigation_buttons = ft.Row(wrap=True, run_spacing=10, spacing=10)
         self.navigation = ft.ExpansionTile(
             title="İşlemler menüsü",
             leading=ft.Icons.MENU_ROUNDED,
@@ -33,7 +33,7 @@ class DashboardView(ft.Column):
             bgcolor="#ffffff",
             collapsed_bgcolor="#ffffff",
         )
-        self.quick_cards = ft.Wrap(run_spacing=12, spacing=12)
+        self.quick_cards = ft.Row(wrap=True, run_spacing=12, spacing=12)
         self._build_navigation()
 
         self.people_view = PersonnelView()
@@ -167,7 +167,7 @@ class DashboardView(ft.Column):
                 alignment=ft.MainAxisAlignment.CENTER,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
-                    ft.Icon(name=icon, size=28, color="#1f4e78"),
+                    ft.Icon(icon=icon, size=28, color="#1f4e78"),
                     ft.Text(title, size=13, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
                 ],
             ),

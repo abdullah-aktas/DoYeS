@@ -31,7 +31,7 @@ class LoginView(ft.Column):
             style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)),
         )
         self.form_container.content.controls = [
-            ft.Icon(name=ft.Icons.SCHOOL_ROUNDED, size=54, color="#1f4e78"),
+            ft.Icon(icon=ft.Icons.SCHOOL_ROUNDED, size=54, color="#1f4e78"),
             ft.Text(value="DÖSE Yönetim", size=28, weight=ft.FontWeight.BOLD),
             ft.Text(value="Güvenli erişim paneli", size=14, color="#5a6474"),
             self.username,
