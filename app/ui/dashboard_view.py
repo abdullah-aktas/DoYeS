@@ -73,7 +73,7 @@ class DashboardView(ft.Column):
             ],
         )
         self.refresh_layout()
-        self.show_dashboard()
+        self.show_dashboard(update=False)
 
     def refresh_layout(self):
         page_width = self.app.page.width or self.app.page.window_width or 1280
@@ -183,7 +183,7 @@ class DashboardView(ft.Column):
         )
         return card
 
-    def show_dashboard(self):
+    def show_dashboard(self, update: bool = True):
         summary = get_dashboard_summary()
         self._dashboard_grid = ft.GridView(
             expand=1,
@@ -228,7 +228,8 @@ class DashboardView(ft.Column):
                 self.quick_cards,
             ],
         )
-        self.update()
+        if update:
+            self.update()
 
     def show_personnel(self):
         if not self._require_access("personnel", "Personel"):
