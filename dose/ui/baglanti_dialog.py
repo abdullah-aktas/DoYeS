@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDialog, QFormLayout,
 
 from .. import ag, baglanti, db as dbmod
 from ..lisans import kurum_kodu_normalize
+from .marka import ikon
 from .ortak import SecimKutusu, bilgi, hata
 
 
@@ -12,6 +13,7 @@ class BaglantiDialog(QDialog):
     def __init__(self, parent=None, hata_metni: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Bağlantı ayarları")
+        self.setWindowIcon(ikon())
         self.setMinimumWidth(520)
         ayar = baglanti.oku()
         ag_ayar = ag.oku()

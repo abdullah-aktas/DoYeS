@@ -3,12 +3,11 @@ import sys
 import traceback
 
 from PySide6.QtCore import QEventLoop, QLocale
-from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from dose import UYGULAMA_ADI, db
 from dose.lisans import SaltOkunurHata
-from dose.yollar import GORSEL
+from dose.ui.marka import ikon
 from dose.ui.tema import STIL
 
 
@@ -47,7 +46,7 @@ def main():
             pass
     app = QApplication(sys.argv)
     app.setApplicationName(UYGULAMA_ADI)
-    app.setWindowIcon(QIcon(str(GORSEL / "ikon.ico")))
+    app.setWindowIcon(ikon())
     app.setStyle("Fusion")
     app.setStyleSheet(STIL)
     # Güvenli çıkışta pencere kapanınca uygulama hemen bitmesin; giriş ekranına dönülebilsin.

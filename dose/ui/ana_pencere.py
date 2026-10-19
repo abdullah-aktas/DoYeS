@@ -13,6 +13,7 @@ from .. import SURUM, UYGULAMA_ADI, izleme, kilavuz, lisans, onay
 from ..yollar import YEDEKLER
 from .giris import SifreDialog
 from .lisans_dialog import LisansDialog, durum_rengi
+from .marka import ikon
 from .ortak import Oturum, bilgi, buton, db, hata
 from .yan_menu import YanMenu
 
@@ -94,6 +95,7 @@ class AnaPencere(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{UYGULAMA_ADI} {SURUM}")
+        self.setWindowIcon(ikon())
         self.resize(1360, 820)
         self.sayfalar: dict[int, QWidget] = {}
         self._ad_indeks = {ad: i for i, (_g, ad, _m, _s) in enumerate(SAYFALAR)}
@@ -173,6 +175,32 @@ class AnaPencere(QMainWindow):
         self.canli = QTimer(self)
         self.canli.timeout.connect(self._degisiklik_denetle)
         self.canli.start(CANLI_ARALIK_MS)
+        QTimer.singleShot(2500, self._guncelleme_kontrol)
+
+    def _guncelleme_kontrol(self):
+        """GitHub surum.json ile karşılaştırır; yeni sürüm varsa uyarır."""
+        try:
+            from .. import guncelleme
+            bil = guncelleme.kontrol_et()
+        except Exception:
+            return
+        if not bil:
+            return
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        from PySide6.QtWidgets import QMessageBox
+        kutu = QMessageBox(self)
+        kutu.setWindowTitle("Güncelleme var")
+        kutu.setWindowIcon(ikon())
+        kutu.setIcon(QMessageBox.Information)
+        kutu.setText(f"Yeni sürüm yayınlandı: <b>{bil.surum}</b> (sizin sürümünüz: {SURUM})")
+        kutu.setInformativeText((bil.notlar or "İyileştirmeler ve düzeltmeler içerir.") +
+                                "\n\nGitHub Releases sayfasından indirip kurulum dosyasını çalıştırın; verileriniz korunur.")
+        indir = kutu.addButton("İndir / GitHub", QMessageBox.AcceptRole)
+        kutu.addButton("Sonra", QMessageBox.RejectRole)
+        kutu.exec()
+        if kutu.clickedButton() == indir:
+            QDesktopServices.openUrl(QUrl(bil.indir or guncelleme.RELEASES_URL))
 
     def _degisiklik_denetle(self):
         """Başka bilgisayar veya mobil cihazlarda yapılan değişiklikleri açık sayfaya yansıtır."""

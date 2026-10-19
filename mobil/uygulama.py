@@ -16,10 +16,10 @@ try:
 except ImportError:
     from istemci import ApiHatasi, Istemci
 
-SURUM = "1.7.0"
+SURUM = "1.7.1"
 SATICI = "Derik MTAL Döner Sermaye İşletmesi"
 
-# Satıcı paketlemeden önce geçit adresini yazabilir (ör. https://mobil.ornek.meb.k12.tr). Boşsa ag.json / env.
+# Satıcı paketlemeden önce geçit adresini yazabilir. Boşsa: LAN keşif → GitHub surum.json → kayıtlı adres.
 VARSAYILAN_GECIT = ""
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 SEVIYE_RENK = {"hata": ft.Colors.RED_700, "uyari": ft.Colors.ORANGE_800, "bilgi": ft.Colors.BLUE_700}
@@ -221,27 +221,32 @@ class Uygulama:
         self.t_kurum = ft.TextField(label="Kurum kodu", value=await self._tercih("kurum_kodu"),
                                     hint_text="MEB kurum kodu (5–8 rakam)", prefix_icon=ft.Icons.TAG,
                                     keyboard_type=ft.KeyboardType.NUMBER, autocorrect=False,
-                                    helper="Aynı kurum kodu ile okul içinden veya dışından giriş yapılır.")
+                                    helper="Adres yazmadan: aynı Wi-Fi'de sunucu keşfedilir veya GitHub geçidi kullanılır.")
         self.t_kullanici = ft.TextField(label="Kullanıcı adı", value=await self._tercih("kullanici"),
                                         prefix_icon=ft.Icons.PERSON, autocorrect=False, enable_suggestions=False)
         self.t_sifre = ft.TextField(label="Şifre", password=True, can_reveal_password=True, prefix_icon=ft.Icons.LOCK,
                                     on_submit=self.giris_yap)
-        self.t_adres = ft.TextField(label="Sunucu / geçit adresi (isteğe bağlı)", value=adres or gecit,
-                                    hint_text="ör. 192.168.1.10:8765 veya https://mobil.okul.tr",
-                                    prefix_icon=ft.Icons.DNS, keyboard_type=ft.KeyboardType.URL, visible=not self.web,
-                                    helper="Boş bırakılırsa kayıtlı geçit kullanılır. Okul Wi-Fi'sinde mobil sunucu IP'si yazılabilir.")
-        self.c_sertifika = ft.Checkbox(label="Okulun kendi (imzasız) sertifikasına güven", visible=not self.web,
+        self.t_adres = ft.TextField(label="Sunucu adresi (gerekirse)", value=adres or gecit,
+                                    hint_text="ör. 192.168.1.10:8765 — genelde boş bırakın",
+                                    prefix_icon=ft.Icons.DNS, keyboard_type=ft.KeyboardType.URL,
+                                    visible=False)
+        self.c_sertifika = ft.Checkbox(label="Okulun kendi (imzasız) sertifikasına güven", visible=False,
                                        value=await self._tercih("sertifika_guven") == "1")
+        self.b_gelismis = ft.TextButton("Gelişmiş: sunucu adresi…", on_click=self._gelismis_ac)
+        self.b_gelismis.visible = not self.web
         self.l_hata = ft.Text(mesaj, color=ft.Colors.RED_700, selectable=True)
         self.b_giris = ft.FilledButton("Giriş yap", icon=ft.Icons.LOGIN, on_click=self.giris_yap, height=48)
+        logo = ft.Image(src="logo.png", width=220, fit=ft.BoxFit.CONTAIN,
+                        error_content=ft.Icon(ft.Icons.ACCOUNT_BALANCE, size=64, color=ft.Colors.TEAL_700))
         icerik = ft.Column([
-            ft.Container(height=24),
-            ft.Icon(ft.Icons.ACCOUNT_BALANCE, size=64, color=ft.Colors.TEAL_700),
+            ft.Container(height=16),
+            ft.Container(logo, alignment=ft.Alignment.CENTER),
             ft.Text("DÖSE Yönetim", size=26, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
-            ft.Text("Kurum kodunuzla her yerden erişim", color=ft.Colors.GREY_700, text_align=ft.TextAlign.CENTER),
-            ft.Container(height=12),
-            self.t_kurum, self.t_kullanici, self.t_sifre, self.t_adres, self.c_sertifika, self.l_hata, self.b_giris,
-            ft.Container(height=24),
+            ft.Text("Kurum kodu + kullanıcı + şifre yeterli", color=ft.Colors.GREY_700, text_align=ft.TextAlign.CENTER),
+            ft.Container(height=8),
+            self.t_kurum, self.t_kullanici, self.t_sifre, self.b_gelismis, self.t_adres, self.c_sertifika,
+            self.l_hata, self.b_giris,
+            ft.Container(height=16),
             ft.Text(f"Sürüm {SURUM} • {SATICI}", size=11, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER),
         ], horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=12, scroll=ft.ScrollMode.AUTO)
         self.page.views.clear()
@@ -249,21 +254,23 @@ class Uygulama:
             ft.SafeArea(ft.Container(icerik, width=460, alignment=ft.Alignment.TOP_CENTER), expand=True)],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER))
         self.page.update()
+        self.page.run_task(self._guncelleme_kontrol_giris)
+
+    async def _gelismis_ac(self, e=None):
+        self.t_adres.visible = True
+        self.c_sertifika.visible = True
+        self.b_gelismis.visible = False
+        self.page.update()
 
     def _adres_coz(self, kurum: str, adres: str) -> str:
-        """Elle yazılan adres > varsayılan geçit > hata."""
-        adres = (adres or "").strip()
-        if adres:
-            return adres
+        """Elle adres > web sabit > varsayılan > LAN keşif > GitHub gecit."""
         if self.sabit_adres:
             return self.sabit_adres
-        if VARSAYILAN_GECIT:
-            return VARSAYILAN_GECIT
-        raise ValueError(
-            "Sunucu / geçit adresi gerekli. Okul Wi-Fi'sinde mobil sunucu IP'sini yazın "
-            f"(ör. 192.168.1.10:8765) veya bilişim sorumlusundan geçit adresini alın."
-            + (f" Kurum: {kurum}." if kurum else "")
-        )
+        try:
+            from kesif import adres_coz
+        except ImportError:
+            from .kesif import adres_coz
+        return adres_coz(kurum_kodu=kurum, sunucu_adresi=adres, varsayilan_gecit=VARSAYILAN_GECIT)
 
     async def giris_yap(self, e=None):
         kurum = "".join((self.t_kurum.value or "").split())
@@ -276,15 +283,17 @@ class Uygulama:
             self.l_hata.value = "Kurum kodu 5–8 rakam olmalıdır."
             self.page.update()
             return
-        try:
-            adres = self._adres_coz(kurum, "" if self.web else (self.t_adres.value or ""))
-        except ValueError as h:
-            self.l_hata.value = str(h)
-            self.page.update()
-            return
-        self.b_giris.disabled, self.l_hata.value = True, ""
+        self.b_giris.disabled, self.l_hata.value = True, "Sunucu aranıyor…"
         self.b_giris.content = "Bağlanıyor…"
         self.page.update()
+        try:
+            adres = await asyncio.to_thread(
+                self._adres_coz, kurum, "" if self.web else (self.t_adres.value or ""))
+        except ValueError as h:
+            self.l_hata.value = str(h)
+            self.b_giris.disabled, self.b_giris.content = False, "Giriş yap"
+            self.page.update()
+            return
         ek = {"X-Istemci-IP": self.page.client_ip or ""} if self.web else {}
         self.api = Istemci(adres, sertifika_dogrula=not (self.web or self.c_sertifika.value), ek_basliklar=ek)
         try:
@@ -305,6 +314,39 @@ class Uygulama:
             self.sifre_ekrani(zorunlu=True)
             return
         await self.ana_ekran()
+
+    async def _guncelleme_kontrol_giris(self):
+        try:
+            try:
+                from kesif import github_surum
+            except ImportError:
+                from .kesif import github_surum
+            veri = await asyncio.to_thread(github_surum)
+        except Exception:
+            return
+        if not veri or not veri.get("surum"):
+            return
+        uzak = str(veri["surum"]).strip()
+
+        def parcala(s):
+            return [int("".join(c for c in p if c.isdigit()) or 0) for p in str(s).split(".")]
+
+        try:
+            if parcala(uzak) <= parcala(SURUM):
+                return
+        except Exception:
+            return
+        url = str(veri.get("indir") or "https://github.com/abdullah-aktas/DoYeS/releases/latest")
+
+        async def ac(e=None):
+            self.page.pop_dialog()
+            self.page.launch_url(url)
+
+        self.page.show_dialog(ft.AlertDialog(
+            title=ft.Text(f"Güncelleme var: {uzak}"),
+            content=ft.Text(f"Sizin sürümünüz: {SURUM}\n\n{veri.get('notlar') or 'Yeni sürüm GitHub’da.'}"),
+            actions=[ft.TextButton("Sonra", on_click=lambda e: self.page.pop_dialog()),
+                     ft.FilledButton("GitHub’da aç", on_click=ac)]))
 
     async def cikis(self, e=None):
         if self.api and self.api.token:

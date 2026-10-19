@@ -1,13 +1,12 @@
 from datetime import datetime
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                QVBoxLayout)
 
 from .. import SURUM, UYGULAMA_ADI, lisans
-from ..yollar import GORSEL
 from .lisans_dialog import LisansDialog, durum_rengi
+from .marka import ikon, logo_etiket
 from .ortak import Oturum, db, uyari
 
 
@@ -15,15 +14,11 @@ class GirisDialog(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{UYGULAMA_ADI} - Giriş")
+        self.setWindowIcon(ikon())
         self.setMinimumWidth(400)
         lay = QVBoxLayout(self)
-        logo = QPixmap(str(GORSEL / "logo.png"))
-        if not logo.isNull():
-            l_logo = QLabel()
-            logo = logo.scaledToWidth(380, Qt.SmoothTransformation)
-            l_logo.setPixmap(logo)
-            l_logo.setMinimumHeight(logo.height() + 4)
-            l_logo.setAlignment(Qt.AlignCenter)
+        l_logo = logo_etiket(self, 380)
+        if l_logo:
             lay.addWidget(l_logo)
             baslik = QLabel(f"<span style='color:#777'>Sürüm {SURUM} • {lisans.SATICI}</span>")
         else:
@@ -110,6 +105,7 @@ class SifreDialog(QDialog):
         super().__init__(parent)
         self.kid = kullanici_id
         self.setWindowTitle("Şifre Değiştir")
+        self.setWindowIcon(ikon())
         lay = QVBoxLayout(self)
         if zorunlu:
             lay.addWidget(QLabel("Güvenliğiniz için yeni bir şifre belirleyiniz (en az 6 karakter)."))

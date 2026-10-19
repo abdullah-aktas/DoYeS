@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFormLayout, 
 
 from .. import lisans
 from ..db import al as db
+from .marka import ikon
 from .ortak import bilgi, hata
 
 RENKLER = {"iyi": "background:#e8f5e9; color:#1b5e20;", "uyari": "background:#fff8e1; color:#8a5a00;",
@@ -20,6 +21,7 @@ class LisansDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Lisans")
+        self.setWindowIcon(ikon())
         self.setMinimumWidth(560)
         lay = QVBoxLayout(self)
         self.l_durum = QLabel()

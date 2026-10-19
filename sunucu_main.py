@@ -90,9 +90,26 @@ def main():
     if not a.sertifika:
         print("UYARI: HTTPS kapalı. Okul dışından (internet üzerinden) erişim açılacaksa --sertifika ve --anahtar ile "
               "HTTPS kullanınız veya sunucuyu VPN arkasında tutunuz.")
+    if not a.coklu:
+        print("LAN keşif açık: aynı Wi-Fi'deki telefonlar sunucu adresini yazmadan bulabilir.")
     print("Durdurmak için bu pencereyi kapatınız veya Ctrl+C'ye basınız.")
-    uvicorn.run(app, host=a.host, port=a.port, ssl_certfile=a.sertifika, ssl_keyfile=a.anahtar,
-                log_level="warning", access_log=False)
+
+    yayinci = None
+    if not a.coklu:
+        from dose.kesif import Yayinci
+        from dose.lisans import kurum_kodu_normalize
+        k = dbm.al().kurum()
+        yayinci = Yayinci(port=a.port, https=bool(a.sertifika),
+                          kurum_kodu=kurum_kodu_normalize(k.get("kurum_kodu")),
+                          okul=k.get("okul_adi") or "")
+        yayinci.baslat()
+
+    try:
+        uvicorn.run(app, host=a.host, port=a.port, ssl_certfile=a.sertifika, ssl_keyfile=a.anahtar,
+                    log_level="warning", access_log=False)
+    finally:
+        if yayinci:
+            yayinci.durdur()
 
 
 if __name__ == "__main__":

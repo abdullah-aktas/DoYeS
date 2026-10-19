@@ -6,6 +6,8 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
                                QWidget)
 
+from .marka import kucuk_logo
+
 GENISLIK_ACIK = 268
 GENISLIK_KAPALI = 56
 
@@ -44,6 +46,11 @@ class YanMenu(QWidget):
         baslik.setObjectName("menuBaslik")
         b_lay = QHBoxLayout(baslik)
         b_lay.setContentsMargins(10, 10, 6, 10)
+        self.l_ikon = QLabel()
+        pm = kucuk_logo(40)
+        if not pm.isNull():
+            self.l_ikon.setPixmap(pm)
+        b_lay.addWidget(self.l_ikon, 0, Qt.AlignTop)
         self.l_baslik = QLabel("DÖSE\nYönetim")
         self.l_baslik.setObjectName("menuBaslikYazi")
         self.l_baslik.setWordWrap(True)
@@ -142,6 +149,7 @@ class YanMenu(QWidget):
         w = GENISLIK_ACIK if self._acik else GENISLIK_KAPALI
         self.setFixedWidth(w)
         self.l_baslik.setVisible(self._acik)
+        self.l_ikon.setVisible(True)
         self.b_daralt.setText("«" if self._acik else "»")
         self.agac.setRootIsDecorated(self._acik)
         # Daraltılmışken grup metnini kısalt
