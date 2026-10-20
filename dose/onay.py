@@ -279,7 +279,7 @@ def _siparis_kontrol(bid):
 
 def _siparis_onay(bid):
     db = al()
-    if db.deger("SELECT durum FROM siparis WHERE id = ?", (bid,), "") == "Teklif":
+    if db.deger("SELECT durum FROM siparis WHERE id = ?", (bid,), "") in M.SIPARIS_TEKLIF_ASAMALARI:
         db.guncelle("siparis", bid, {"durum": "Sözleşme İmzalandı"})
 
 
@@ -294,7 +294,7 @@ def _siparis_engel(bid):
 def _siparis_geri_al(bid):
     db = al()
     if db.deger("SELECT durum FROM siparis WHERE id = ?", (bid,), "") == "Sözleşme İmzalandı":
-        db.guncelle("siparis", bid, {"durum": "Teklif"})
+        db.guncelle("siparis", bid, {"durum": "Proforma İletildi"})
 
 
 def _siparis_ozet(bid):
@@ -443,7 +443,8 @@ def _onayli(tablo, anahtar="id"):
 KANCALAR = {
     "Sipariş": {"kontrol": _siparis_kontrol, "bolum": lambda b: al().deger("SELECT bolum_id FROM siparis WHERE id = ?", (b,), None),
                 "onay": _siparis_onay, "geri_al_engel": _siparis_engel, "geri_al": _siparis_geri_al, "ozet": _siparis_ozet,
-                "onayli": lambda b: al().deger("SELECT durum FROM siparis WHERE id = ?", (b,), "Teklif") not in ("Teklif", "İptal")},
+                "onayli": lambda b: al().deger("SELECT durum FROM siparis WHERE id = ?", (b,), "Teklif")
+                                   not in (*M.SIPARIS_TEKLIF_ASAMALARI, "İptal")},
     "Parça Başı": {"kontrol": parca_basi_kontrol, "onay": _pb_onay, "geri_al_engel": _pb_engel, "geri_al": _pb_geri_al,
                    "bolum": lambda b: al().deger("SELECT s.bolum_id FROM parca_basi pb JOIN siparis s ON s.id = pb.siparis_id "
                                                  "WHERE pb.id = ?", (b,), None),

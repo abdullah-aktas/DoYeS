@@ -19,6 +19,25 @@ SABLONLAR = {
         "İlgi yazınız ile talep edilen mal/hizmete ilişkin fiyat teklifimiz ekte sunulmuştur. Söz konusu iş okulumuz atölye ve "
         "laboratuvarlarında öğrencilerimizin de katılımıyla bizzat üretilecek olup 4734 sayılı Kamu İhale Kanununun 3 üncü maddesinin "
         "(e) bendi kapsamında değerlendirilebilecektir.\n\nBilgilerinize arz ederim."),
+    "İlçe MEM / okul talebine keşif-proforma cevabı": (
+        "Keşif, Maliyet ve Proforma",
+        "................................................ İLÇE MİLLÎ EĞİTİM MÜDÜRLÜĞÜNE",
+        "İlgi: a) ....../....../...... tarihli ve ............ sayılı yazınız.\n"
+        "      b) ....../....../...... tarihli keşif / iş planı tutanağımız.\n\n"
+        "İlgi (a) yazınız ile talep edilen işe ilişkin yerinde inceleme yapılmış; ihtiyaç duyulan kontrol, bakım ve onarım "
+        "kalemleri iş planına bağlanmıştır. Malzeme ve işçilik giderlerini içeren maliyet hesabı ile proforma fatura ekte "
+        "sunulmuştur.\n\n"
+        "Proforma fatura vergi mevzuatı bakımından fatura değildir; yalnızca fiyat ve iş kapsamı teklifidir. Teklifinizin "
+        "uygun bulunması hâlinde iş ve işlemler okulumuz Döner Sermaye İşletmesi üzerinden sözleşme imzalanarak "
+        "yürütülecek, teslimde e-Fatura / e-Arşiv fatura düzenlenecektir (DÖSE Yönetmeliği md.9/4; 4734 sayılı Kanun md.3/e).\n\n"
+        "Bilgilerinizi ve gereğini arz ederim."),
+    "Proforma kabulü sonrası sözleşme daveti": (
+        "Sözleşme",
+        "................................................ MÜDÜRLÜĞÜNE / SAYIN ........",
+        "İlgi: ....../....../...... tarihli ve ............ sayılı proforma / fiyat teklifimiz.\n\n"
+        "İlgi teklifimizin uygun bulunduğu bildirilmiş olup, işin yürütülmesi için DÖSE Yönetmeliği md.9/4 gereği "
+        "mal / hizmet üretim sözleşmesinin imzalanması gerekmektedir. Sözleşme imzalanmadan işe başlanamayacaktır.\n\n"
+        "Ekte sunulan sözleşmenin imzalanarak okulumuz Döner Sermaye İşletmesine iletilmesini rica ederim."),
     "Döner sermaye çalışmaları görevlendirme oluru": (
         "Döner Sermaye Görevlendirmesi",
         "MÜDÜRLÜK MAKAMINA",

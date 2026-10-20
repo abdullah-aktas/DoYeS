@@ -309,7 +309,8 @@ class ParcaBasiDialog(QDialog):
         self.ay = SecimKutusu(secenekler=[(i + 1, a) for i, a in enumerate(mevzuat.AYLAR)])
         kisit = Oturum.bolum_id()
         self.siparis = SecimKutusu(secenekler=[(r["id"], f"{r['siparis_no']} - {r['konu'] or ''} ({r['durum']})") for r in db().q(
-            "SELECT id, siparis_no, konu, durum FROM siparis WHERE ucret_esasi NOT LIKE 'Fazla%' AND durum NOT IN ('İptal', 'Teklif') "
+            "SELECT id, siparis_no, konu, durum FROM siparis WHERE ucret_esasi NOT LIKE 'Fazla%' AND durum NOT IN "
+            "('İptal', 'Talep Alındı', 'Keşif / İş Planı', 'Teklif', 'Proforma İletildi') "
             + ("AND bolum_id = ? " if kisit else "") + "ORDER BY id DESC", (kisit,) if kisit else ())], bos=True)
         self.kabul = ParaKutusu()
         self.ogr = OranKutusu()

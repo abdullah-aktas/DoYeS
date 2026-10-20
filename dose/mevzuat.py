@@ -75,14 +75,20 @@ UCRET_ESASLARI = [
 ]
 
 SIPARIS_DURUMLARI = [
-    "Teklif",
-    "Sözleşme İmzalandı",
+    "Talep Alındı",          # Resmi yazı / müşteri talebi kayda alındı
+    "Keşif / İş Planı",     # Yerinde inceleme, bakım-onarım kalemleri belirlendi
+    "Teklif",               # Maliyet hesabı ve proforma / fiyat teklifi hazır
+    "Proforma İletildi",    # Proforma muhataba gönderildi; kabul bekleniyor
+    "Sözleşme İmzalandı",   # Kabul sonrası sözleşme (Yön. md.9/4 — imzasız işe başlanmaz)
     "Üretimde",
     "Tamamlandı (Geçici Kabul)",
     "Faturalandı",
     "Kapandı",
     "İptal",
 ]
+
+# Onay tamamlanınca sözleşmeye geçebilecek ön aşamalar (proforma henüz vergi belgesi değildir)
+SIPARIS_TEKLIF_ASAMALARI = ("Talep Alındı", "Keşif / İş Planı", "Teklif", "Proforma İletildi")
 
 CARI_TURLERI = ["Müşteri", "Tedarikçi", "Çiftçi (Müstahsil)", "Müşteri ve Tedarikçi"]
 
@@ -342,6 +348,9 @@ ekranından yıllık olarak güncellenebilir. Tereddüt hâlinde yürürlükteki
 <li>Kamu kurumları 4734 md.3/e kapsamında ihalesiz alım yapabilir; ancak işin <b>bizzat üretilmesi</b> şarttır.</li>
 <li>Siparişe hangi ücret esasıyla (parça başı / fazla çalışma) başlandıysa aynı esasla bitirilir (Yön. md.7/3).</li>
 <li>Her iş için sözleşme yapılır, sözleşme imzalanmadan işe başlanmaz (Yön. md.9/4).</li>
+<li>İlçe MEM / okul vb. resmi talep yazılarında tipik sıra: <b>talep kaydı → keşif / iş planı → maliyet → proforma
+iletimi → kabul → sözleşme → üretim → e-Fatura</b>. Proforma fatura VUK ve e-Belge bakımından vergi belgesi değildir;
+yalnızca teklif niteliğindedir. Asıl fatura teslim / kabul sonrası kesilir.</li>
 </ul>
 
 <h3>3. Parça Başı Üretim (Yön. md.8)</h3>

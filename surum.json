@@ -1,7 +1,7 @@
 {
-  "surum": "1.7.1",
+  "surum": "1.7.2",
   "tarih": "2026-10-20",
-  "notlar": "Açılır-kapanır menü, güvenli çıkış, kurum kodu ile giriş, LAN keşif (geçit adresi zorunlu değil), ortak logo/ikon, GitHub güncelleme uyarısı.",
+  "notlar": "Resmi talep → keşif/iş planı → proforma → sözleşme akışı. Proforma ve keşif PDF’leri; İlçe MEM üst yazı şablonları. Proforma vergi belgesi değildir.",
   "indir": "https://github.com/abdullah-aktas/DoYeS/releases/latest",
   "repo": "https://github.com/abdullah-aktas/DoYeS",
   "gecit": ""

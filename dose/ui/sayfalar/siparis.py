@@ -21,8 +21,9 @@ class SiparisSayfasi(QWidget):
         lay = QVBoxLayout(self)
         lay.addWidget(baslik_etiketi(
             "Siparişler / İş Emirleri",
-            "Sipariş bedeli; ücret esasına göre kâr, faaliyet gideri, malzeme, işçilik ve öğrenci hakkı olarak otomatik tahsis "
-            "edilir ve Yönetmelik oranlarıyla kontrol edilir. Sözleşme, görevlendirme onayı ve muayene-kabul belgeleri buradan üretilir."))
+            "Resmi talep → keşif / iş planı → maliyet → proforma → sözleşme akışı. Bedel; ücret esasına göre kâr, faaliyet "
+            "gideri, malzeme, işçilik ve öğrenci hakkı olarak tahsis edilir. Proforma vergi faturası değildir; kabul sonrası "
+            "sözleşme (Yön. md.9/4) ve teslimde e-Fatura/e-Arşiv kesilir."))
         ust = QHBoxLayout()
         self.b_yeni = buton("＋ Yeni Sipariş", self.yeni, "birincil")
         ust.addWidget(self.b_yeni)
@@ -31,9 +32,12 @@ class SiparisSayfasi(QWidget):
         ust.addWidget(buton("Onay akışı", self.onay_akisi, ipucu="Alan şefi → teknik müdür yardımcısı → okul müdürü onayı"))
         bb = buton("Belgeler ▾")
         m = QMenu(bb)
-        m.addAction("Fiyat teklifi", lambda: self.belge("teklif"))
+        m.addAction("Keşif ve iş planı tutanağı", lambda: self.belge("kesif"))
         m.addAction("Ön maliyet ve işçilik tespit çizelgesi", lambda: self.belge("maliyet"))
+        m.addAction("Proforma fatura (teklif — vergi belgesi değildir)", lambda: self.belge("proforma"))
+        m.addAction("Fiyat teklifi (mektup)", lambda: self.belge("teklif"))
         m.addAction("Sözleşme / protokol", lambda: self.belge("sozlesme"))
+        m.addSeparator()
         m.addAction("Parça başı çalışma istek listesi (md.8/1)", lambda: self.belge("istek"))
         m.addAction("Görevlendirme onayı (personel + öğrenci)", lambda: self.belge("gorev"))
         m.addAction("Siparişte kullanılan malzeme listesi", lambda: self.belge("malzeme"))
@@ -81,7 +85,7 @@ class SiparisSayfasi(QWidget):
             s["ogrenci_hakki"] = t.ogrenci_hakki
             s["kontrol"] = "⛔ " + t.hatalar[0] if t.hatalar else ("⚠ " + t.uyarilar[0] if t.uyarilar else "✔ Uygun")
             s["onay"] = onay.durum_metni(durumlar[s["id"]]) if s["id"] in durumlar else (
-                onay.ONAYLANDI if s["durum"] not in ("Teklif", "İptal") else onay.HAZIRLANIYOR)
+                onay.ONAYLANDI if s["durum"] not in (*mevzuat.SIPARIS_TEKLIF_ASAMALARI, "İptal") else onay.HAZIRLANIYOR)
         self.tablo.doldur([
             Kolon("siparis_no", "Sipariş no"), Kolon("tarih", "Tarih", "tarih"), Kolon("unvan", "Müşteri"),
             Kolon("konu", "Konu"), Kolon("bolum_ad", "Bölüm"), Kolon("ucret_esasi", "Ücret esası"),
@@ -124,7 +128,7 @@ class SiparisSayfasi(QWidget):
             return
         if soru(self, f"{s['siparis_no']} numaralı sipariş silinsin mi?"):
             with db().islem():
-                for t in ("siparis_kalem", "siparis_gorevli"):
+                for t in ("siparis_kalem", "siparis_gorevli", "siparis_is_plani"):
                     db().ex(f"DELETE FROM {t} WHERE siparis_id = ?", (s["id"],))
                 db().sil("siparis", s["id"])
                 onay.sil("Sipariş", s["id"])
@@ -136,7 +140,17 @@ class SiparisSayfasi(QWidget):
             bilgi(self, "Önce bir sipariş seçiniz.")
             return
         p = db().parametreler(Oturum.yil)
-        if tur == "teklif":
+        if tur == "kesif":
+            yol = belgeler.kesif_is_plani(cikti_yolu(f"Kesif_Is_Plani_{s['siparis_no']}"), s["id"])
+        elif tur == "proforma":
+            self._proforma_hazirla(s)
+            yol = belgeler.proforma_fatura(cikti_yolu(f"Proforma_{s.get('proforma_no') or s['siparis_no']}"), s["id"])
+            if s.get("durum") in ("Talep Alındı", "Keşif / İş Planı", "Teklif") and \
+                    soru(self, "Proforma oluşturuldu. Sipariş durumu 'Proforma İletildi' yapılsın mı?\n\n"
+                               "(Muhataba ilettikten sonra kabul gelince onay akışı / sözleşme adımına geçiniz.)"):
+                db().guncelle("siparis", s["id"], {"durum": "Proforma İletildi"})
+                self.yenile()
+        elif tur == "teklif":
             yol = belgeler.teklif_mektubu(cikti_yolu(f"Teklif_{s['siparis_no']}"), s["id"])
         elif tur == "sozlesme":
             from ...hesap import esas_kurallari
@@ -156,6 +170,21 @@ class SiparisSayfasi(QWidget):
         else:
             yol = belgeler.muayene_kabul_tutanagi(cikti_yolu(f"Muayene_Kabul_{s['siparis_no']}"), s["id"])
         dosya_ac(yol)
+
+    @staticmethod
+    def _proforma_hazirla(s: dict):
+        """Proforma no/tarih yoksa otomatik verir (e-Fatura numarası değildir)."""
+        from datetime import date as _date
+        guncel = {}
+        if not s.get("proforma_no"):
+            guncel["proforma_no"] = db().sonraki_no("proforma", Oturum.yil, "PRF")
+        if not s.get("proforma_tarih"):
+            guncel["proforma_tarih"] = _date.today().isoformat()
+        if s.get("proforma_gecerlilik_gun") in (None, ""):
+            guncel["proforma_gecerlilik_gun"] = 30
+        if guncel:
+            db().guncelle("siparis", s["id"], guncel)
+            s.update(guncel)
 
     def faturalandir(self):
         s = self.tablo.secili()
@@ -231,6 +260,55 @@ class SiparisDialog(QDialog):
         f.addWidget(QLabel("Açıklama:"), 9, 0)
         f.addWidget(self.aciklama, 9, 1, 1, 3)
         sekmeler.addTab(g, "Genel bilgiler")
+
+        # --- talep / keşif / iş planı / proforma (İlçe MEM vb. resmi yazı akışı)
+        tp = QWidget()
+        tl = QVBoxLayout(tp)
+        tl.addWidget(QLabel(
+            "Resmi yazı ile gelen taleplerde (ör. ilçe MEM, okul müdürlüğü): talep bilgilerini girin → keşif ve iş planı "
+            "kalemlerini yazın → kalemler sekmesinde maliyet → Belgeler menüsünden proforma ve sözleşme üretin. "
+            "Proforma e-Fatura değildir."))
+        tf = QGridLayout()
+        self.talep_kurum = QLineEdit()
+        self.talep_sayi = QLineEdit()
+        self.talep_tarih = TarihKutusu(bos_olabilir=True)
+        self.talep_ilgi = QLineEdit()
+        self.kesif_tarih = TarihKutusu(bos_olabilir=True)
+        self.proforma_no = QLineEdit()
+        self.proforma_no.setPlaceholderText("Boş bırakılırsa proforma PDF alınırken otomatik verilir")
+        self.proforma_tarih = TarihKutusu(bos_olabilir=True)
+        self.proforma_gun = QSpinBox()
+        self.proforma_gun.setRange(1, 180)
+        self.proforma_gun.setValue(30)
+        self.proforma_gun.setSuffix(" gün")
+        self.kesif_ozet = QPlainTextEdit()
+        self.kesif_ozet.setMaximumHeight(80)
+        self.kesif_ozet.setPlaceholderText("Yerinde inceleme tespitleri, periyodik kontrol kapsamı, bakım-onarım ihtiyacı…")
+        for i, (etiket, w) in enumerate([
+            ("Talep eden kurum / makam", self.talep_kurum), ("Talep yazı sayısı", self.talep_sayi),
+            ("Talep tarihi", self.talep_tarih), ("İlgi (önceki yazı)", self.talep_ilgi),
+            ("Keşif / inceleme tarihi", self.kesif_tarih), ("Proforma no", self.proforma_no),
+            ("Proforma tarihi", self.proforma_tarih), ("Proforma geçerlilik", self.proforma_gun),
+        ]):
+            tf.addWidget(QLabel(etiket + ":"), i % 4, (i // 4) * 2)
+            tf.addWidget(w, i % 4, (i // 4) * 2 + 1)
+        tl.addLayout(tf)
+        tl.addWidget(QLabel("Keşif / tespit özeti:"))
+        tl.addWidget(self.kesif_ozet)
+        tl.addWidget(QLabel("İş planı kalemleri (kontrol, bakım, onarım adımları — maliyet kalemlerinden ayrıdır):"))
+        pu = QHBoxLayout()
+        pu.addWidget(buton("＋ İş kalemi", lambda: self.plan_ekle()))
+        pu.addWidget(buton("Kalemi sil", self.plan_sil))
+        pu.addStretch()
+        tl.addLayout(pu)
+        self.pt = QTableWidget(0, 6)
+        self.pt.setHorizontalHeaderLabels(["Sıra", "İş kalemi", "Açıklama / kapsam", "Miktar", "Birim", "Tahmini saat"])
+        self.pt.horizontalHeader().setStretchLastSection(True)
+        self.pt.verticalHeader().setVisible(False)
+        self.pt.setMaximumHeight(200)
+        satir_odagini_izle(self.pt)
+        tl.addWidget(self.pt)
+        sekmeler.addTab(tp, "Talep ve iş planı")
 
         # --- kalemler ve tahsis
         k = QWidget()
@@ -355,12 +433,21 @@ class SiparisDialog(QDialog):
         self.baslama.ayarla(s.get("baslama_tarihi"))
         self.teslim.ayarla(s.get("teslim_tarihi"))
         self.kabul.ayarla(s.get("kabul_tarihi"))
-        self.durum.ayarla(s.get("durum") or "Teklif")
+        self.durum.ayarla(s.get("durum") or "Talep Alındı")
         self.ogr.setChecked(bool(s.get("ogrenci_uygulamasi", 1)))
         self.mus_malz.setChecked(bool(s.get("malzeme_musteriden")))
         self.sure.setValue(s.get("sozlesme_suresi_ay") or 0)
         self.izin.setChecked(bool(s.get("bakanlik_izni")))
         self.aciklama.setPlainText(s.get("aciklama") or "")
+        self.talep_kurum.setText(s.get("talep_kurum") or "")
+        self.talep_sayi.setText(s.get("talep_sayi") or "")
+        self.talep_tarih.ayarla(s.get("talep_tarih"))
+        self.talep_ilgi.setText(s.get("talep_ilgi") or "")
+        self.kesif_tarih.ayarla(s.get("kesif_tarih"))
+        self.kesif_ozet.setPlainText(s.get("kesif_ozet") or "")
+        self.proforma_no.setText(s.get("proforma_no") or "")
+        self.proforma_tarih.ayarla(s.get("proforma_tarih"))
+        self.proforma_gun.setValue(int(s.get("proforma_gecerlilik_gun") or 30))
         from ...hesap import esas_kurallari
         kural = esas_kurallari(self.esas.deger(), self.p)
         self.kar.ayarla(s.get("kar_orani") if s.get("kar_orani") is not None else kural["kar"])
@@ -369,6 +456,8 @@ class SiparisDialog(QDialog):
         self.ogr_oran.ayarla(s.get("ogrenci_hakki_orani") if s.get("ogrenci_hakki_orani") is not None else self.p["ogrenci_hakki_orani"])
         for kl in db().q("SELECT * FROM siparis_kalem WHERE siparis_id = ? ORDER BY id", (self.sid or 0,)):
             self.kalem_ekle(kl)
+        for pl in db().q("SELECT * FROM siparis_is_plani WHERE siparis_id = ? ORDER BY sira, id", (self.sid or 0,)):
+            self.plan_ekle(pl)
 
     def _esas_degisti(self):
         from ...hesap import esas_kurallari
@@ -423,6 +512,44 @@ class SiparisDialog(QDialog):
         self.kt.removeRow(r)
         self.hesapla()
 
+    def plan_ekle(self, pl=None):
+        pl = pl or {}
+        r = self.pt.rowCount()
+        self.pt.insertRow(r)
+        sira = QSpinBox()
+        sira.setRange(1, 999)
+        sira.setValue(int(pl.get("sira") or r + 1))
+        kalem = QLineEdit(pl.get("kalem") or "")
+        ack = QLineEdit(pl.get("aciklama") or "")
+        mik = ParaKutusu(ondalik=3)
+        mik.ayarla(pl.get("miktar") if pl.get("miktar") is not None else 1)
+        birim = SecimKutusu(secenekler=mevzuat.BIRIMLER, duzenlenebilir=True)
+        birim.ayarla(pl.get("birim") or "Adet")
+        saat = ParaKutusu(ondalik=2)
+        saat.ayarla(pl.get("tahmini_saat"))
+        for c, w in enumerate((sira, kalem, ack, mik, birim, saat)):
+            self.pt.setCellWidget(r, c, w)
+        self.pt.setColumnWidth(1, 180)
+        self.pt.setColumnWidth(2, 220)
+
+    def plan_sil(self):
+        r = self.pt.currentRow()
+        if r < 0:
+            uyari(self, "Silinecek iş planı satırına tıklayıp yeniden deneyiniz.")
+            return
+        self.pt.removeRow(r)
+
+    def plan_kalemleri(self):
+        sonuc = []
+        for r in range(self.pt.rowCount()):
+            w = [self.pt.cellWidget(r, c) for c in range(6)]
+            kalem = w[1].text().strip()
+            if not kalem:
+                continue
+            sonuc.append({"sira": w[0].value(), "kalem": kalem, "aciklama": w[2].text().strip() or None,
+                          "miktar": w[3].deger(), "birim": w[4].deger(), "tahmini_saat": w[5].deger()})
+        return sonuc
+
     def kalemler(self):
         sonuc = []
         for r in range(self.kt.rowCount()):
@@ -446,6 +573,15 @@ class SiparisDialog(QDialog):
             "iscilik_tutari": self.iscilik.deger(), "ogrenci_hakki_orani": self.ogr_oran.deger(),
             "sozlesme_suresi_ay": self.sure.value(), "bakanlik_izni": 1 if self.izin.isChecked() else 0,
             "aciklama": self.aciklama.toPlainText().strip() or None,
+            "talep_kurum": self.talep_kurum.text().strip() or None,
+            "talep_sayi": self.talep_sayi.text().strip() or None,
+            "talep_tarih": self.talep_tarih.deger(),
+            "talep_ilgi": self.talep_ilgi.text().strip() or None,
+            "kesif_tarih": self.kesif_tarih.deger(),
+            "kesif_ozet": self.kesif_ozet.toPlainText().strip() or None,
+            "proforma_no": self.proforma_no.text().strip() or None,
+            "proforma_tarih": self.proforma_tarih.deger(),
+            "proforma_gecerlilik_gun": self.proforma_gun.value(),
         }
 
     @staticmethod
@@ -504,7 +640,7 @@ class SiparisDialog(QDialog):
                       "iscilik_tutari", "ogrenci_hakki_orani", "ogrenci_uygulamasi", "sozlesme_suresi_ay")
 
     def _onay_denetimi(self, v: dict) -> bool:
-        """Onay akışı açıkken: süreçteki sipariş değiştirilemez, onaysız sipariş 'Teklif' aşamasını geçemez,
+        """Onay akışı açıkken: süreçteki sipariş değiştirilemez, onaysız sipariş teklif aşamalarını geçemez,
         onaylı siparişte esaslı değişiklik akışı başa döndürür."""
         if Oturum.bolum_id() and self.sid and self.s.get("bolum_id") not in (None, Oturum.bolum_id()):
             uyari(self, "Yalnız kendi bölümünüzün siparişlerini değiştirebilirsiniz.")
@@ -527,7 +663,7 @@ class SiparisDialog(QDialog):
                 onay.sifirla("Sipariş", self.sid, Oturum.kullanici, "Esaslı değişiklik: " + ", ".join(degisen))
                 v["durum"] = "Teklif"
             return True
-        if v["durum"] not in ("Teklif", "İptal"):
+        if v["durum"] not in (*mevzuat.SIPARIS_TEKLIF_ASAMALARI, "İptal"):
             uyari(self, f"Sipariş harcama yetkilisince onaylanmadan durumu '{v['durum']}' yapılamaz. "
                         "Kaydedip 'Onay akışı' ile onaya gönderiniz.")
             return False
@@ -542,20 +678,22 @@ class SiparisDialog(QDialog):
         if eksik:
             uyari(self, "Zorunlu alanlar: " + ", ".join(eksik))
             return
-        if not self.kalemler():
-            uyari(self, "En az bir kalem giriniz.")
+        erken = v["durum"] in ("Talep Alındı", "Keşif / İş Planı")
+        if not self.kalemler() and not erken:
+            uyari(self, "En az bir kalem giriniz. (Talep / keşif aşamasında kalemsiz kaydedilebilir.)")
             return
-        k_hata = kalem_hatalari(self.kalemler())
-        if k_hata:
-            uyari(self, "Kalemleri düzeltiniz:\n\n" + "\n".join(k_hata))
-            return
+        if self.kalemler():
+            k_hata = kalem_hatalari(self.kalemler())
+            if k_hata:
+                uyari(self, "Kalemleri düzeltiniz:\n\n" + "\n".join(k_hata))
+                return
         if not self._onay_denetimi(v):
             return
-        t = tahsis_hesapla(v, self.p)
-        if t.hatalar and v["durum"] not in ("Teklif", "İptal"):
+        t = tahsis_hesapla(v, self.p) if self.kalemler() else None
+        if t and t.hatalar and v["durum"] not in (*mevzuat.SIPARIS_TEKLIF_ASAMALARI, "İptal"):
             uyari(self, "Mevzuata aykırılık giderilmeden sipariş kabul edilemez:\n\n" + "\n".join(t.hatalar))
             return
-        if not v["iscilik_tutari"] and not v["ucret_esasi"].startswith("Fazla"):
+        if t and not v["iscilik_tutari"] and not v["ucret_esasi"].startswith("Fazla"):
             v["iscilik_tutari"] = max(0.0, t.azami_iscilik)
         ogr_muvafakatsiz = [self.l_ogr.item(i).text() for i in range(self.l_ogr.count())
                             if self.l_ogr.item(i).checkState() == Qt.Checked and not self.l_ogr.item(i).data(Qt.UserRole + 1)]
@@ -576,6 +714,10 @@ class SiparisDialog(QDialog):
             for k in self.kalemler():
                 k["siparis_id"] = self.sid
                 db().ekle("siparis_kalem", k, log=False)
+            db().ex("DELETE FROM siparis_is_plani WHERE siparis_id = ?", (self.sid,))
+            for pl in self.plan_kalemleri():
+                pl["siparis_id"] = self.sid
+                db().ekle("siparis_is_plani", pl, log=False)
             db().ex("DELETE FROM siparis_gorevli WHERE siparis_id = ?", (self.sid,))
             for tur, liste, gorev in (("Personel", self.l_per, "Üretim / danışmanlık"), ("Öğrenci", self.l_ogr, "Beceri eğitimi")):
                 for i in range(liste.count()):

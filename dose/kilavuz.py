@@ -179,19 +179,23 @@ IS_REHBERLERI: list[IsRehberi] = [
             Adim("Ürünün veya hizmetin satış fiyatı daha önce belirlenmediyse önce fiyat tespiti yapın "
                  "('Ürünümün satış fiyatını belirleyeceğim' rehberi). Fiyatı komisyon belirler.",
                  "Ürün / Hizmet ve Maliyet", "Alan şefi"),
-            Adim("'＋ Yeni Sipariş' düğmesine basın. Müşteri, bölüm, işin konusu ve ücret esasını seçin. Ücret esası "
-                 "(parça başı veya fazla çalışma) iş bitene kadar değiştirilemez. 'Öğrenciler bu işte uygulamaya alınacak' "
-                 "kutusu işaretli kalmalıdır.", "Siparişler / İş Emirleri", "Alan şefi / öğretmen"),
-            Adim("'Kalemler ve bedel tahsisi' sekmesinde kalemleri girin. Program kâr, faaliyet gideri, malzeme, işçilik ve "
-                 "öğrenci hakkını kendisi hesaplar. Altta kırmızı uyarı varsa kaydetmeden önce düzeltin.",
+            Adim("'＋ Yeni Sipariş' düğmesine basın. Durumu 'Talep Alındı' bırakın. Müşteri, bölüm, işin konusu ve ücret esasını "
+                 "seçin. Ücret esası iş bitene kadar değiştirilemez. 'Öğrenciler bu işte uygulamaya alınacak' kutusu işaretli "
+                 "kalmalıdır.", "Siparişler / İş Emirleri", "Alan şefi / öğretmen"),
+            Adim("Resmi yazı (ilçe MEM vb.) geldiyse 'Talep ve iş planı' sekmesine talep sayısı, tarihi, ilgiyi yazın; "
+                 "yerinde inceleme sonrası keşif özeti ve iş planı kalemlerini girin. Durumu 'Keşif / İş Planı' yapın.",
+                 "Siparişler / İş Emirleri", "Alan şefi / teknik personel"),
+            Adim("'Kalemler ve bedel tahsisi' sekmesinde malzeme/işçilik kalemlerini girin. Program kâr, faaliyet gideri, "
+                 "malzeme, işçilik ve öğrenci hakkını hesaplar. Durumu 'Teklif' yapın. Altta kırmızı uyarı varsa düzeltin.",
                  "Siparişler / İş Emirleri", "Alan şefi"),
             Adim("'Görevliler' sekmesinde işte çalışacak personeli ve öğrencileri işaretleyin. Yanında ⚠ işareti olan "
                  "öğrencinin veli muvafakatnamesi yoktur; önce muvafakat alın.", "Siparişler / İş Emirleri", "Alan şefi"),
-            Adim("'Belgeler ▾' menüsünden 'Fiyat teklifi' ve 'Sözleşme / protokol' çıktısını alın, müşteriyle imzalayın. "
-                 "Sözleşme imzalanmadan işe başlanmaz. Peşinat alınacaksa 'Kasa / Banka' sayfasında '＋ Giriş (tahsilat)' ile "
-                 "'Peşinat/Avans Tahsilatı' olarak kaydedin.", "Siparişler / İş Emirleri", "Alan şefi / sayman"),
-            Adim("'Onay akışı' düğmesiyle siparişi onaya gönderin: alan şefi → teknik müdür yardımcısı → okul müdürü. "
-                 "Müdür onaylayınca sipariş 'Sözleşme İmzalandı' durumuna geçer.", "Onay Bekleyenler", "Şef → TMY → Müdür"),
+            Adim("'Belgeler ▾' → 'Keşif ve iş planı' ve 'Proforma fatura' çıktılarını alın; resmi yazılar sayfasındaki "
+                 "'İlçe MEM / okul talebine keşif-proforma cevabı' şablonuyla üst yazı ekleyin. Proforma vergi faturası "
+                 "değildir. Durumu 'Proforma İletildi' yapın.", "Siparişler / İş Emirleri", "Alan şefi / sayman"),
+            Adim("Muhatap kabul edince 'Onay akışı' ile onaya gönderin (şef → TMY → müdür). Onayda durum 'Sözleşme İmzalandı' "
+                 "olur; 'Sözleşme / protokol' PDF'ini imzalayın. Sözleşme imzalanmadan işe başlanmaz. Peşinat varsa "
+                 "'Kasa / Banka' → 'Peşinat/Avans Tahsilatı'.", "Onay Bekleyenler", "Şef → TMY → Müdür"),
             Adim("'Belgeler ▾' → 'Görevlendirme onayı' çıktısını müdüre imzalatın, siparişin durumunu 'Üretimde' yapın. "
                  "Stoktan malzeme kullanılacaksa 'Malzeme çıkışı' düğmesini kullanın.", "Siparişler / İş Emirleri", "Alan şefi"),
             Adim("İş bitince okul komisyonu 'Geçici muayene ve kabul tutanağı'nı imzalar; siparişteki 'Geçici kabul tarihi' "
@@ -587,10 +591,11 @@ SAYFA_YARDIMI: dict[str, tuple[str, list[str], list[str], str | None]] = {
         ["Ürünü seçip 'Maliyet Analizi / Fiyat Tespiti' düğmesine basın.", "'Fiyat Tespit Tutanağı (PDF)'yi komisyona imzalatın."],
         ["Fiyatı komisyon belirler; komisyon fiyatının altında satış yapılamaz."], "fiyat"),
     "Siparişler / İş Emirleri": (
-        "Okula gelen işlerin kaydı, bedelin yasal paylara bölünmesi, sözleşme ve kabul belgeleri.",
-        ["'＋ Yeni Sipariş' ile başlayın.", "'Belgeler ▾' menüsünden teklif, sözleşme, görevlendirme ve kabul tutanaklarını alın.",
+        "Talep → keşif/iş planı → proforma → sözleşme → üretim; bedelin yasal paylara bölünmesi.",
+        ["'＋ Yeni Sipariş' ile başlayın; resmi yazıyı 'Talep ve iş planı' sekmesine işleyin.",
+         "'Belgeler ▾' menüsünden keşif tutanağı, proforma, sözleşme, görevlendirme ve kabul alın.",
          "'Onay akışı' ile onaya gönderin.", "İş bitince 'Faturalandır'."],
-        ["Sözleşmesiz işe başlanmaz.", "Öğrencinin çalışmadığı iş kabul edilmez.",
+        ["Proforma e-Fatura değildir.", "Sözleşmesiz işe başlanmaz.", "Öğrencinin çalışmadığı iş kabul edilmez.",
          "Geçici kabul tarihi girilmeden parça başı ödenmez."], "siparis"),
     "Satış Faturaları": (
         "Satışların faturaları ve tahsilatları.",
@@ -665,6 +670,9 @@ SOZLUK: list[tuple[str, str]] = [
     ("Sayman", "Döner sermayenin muhasebe yetkilisi; parayı, kayıtları ve vergileri yönetir, Sayıştay'a hesap verir."),
     ("Cari hesap", "Alışveriş yaptığınız kişi veya kurumun hesabı. Müşteri (alıcı) veya tedarikçi (satıcı) olabilir."),
     ("Sipariş / iş emri", "Bir müşterinin okula yaptırdığı işin kaydı."),
+    ("Proforma fatura", "Fiyat ve iş kapsamı teklifi. Vergi faturası (e-Fatura/e-Arşiv) değildir; kabul ve sözleşme sonrası "
+     "asıl fatura kesilir."),
+    ("Keşif / iş planı", "Yerinde inceleme sonucu ihtiyaç duyulan kontrol, bakım ve onarım adımlarının listesi."),
     ("Sözleşme bedeli", "İşin KDV hariç toplam fiyatı."),
     ("Ücret esası", "Çalışanlara ödemenin nasıl yapılacağı: parça başı ücret veya fazla çalışma ücreti. İş başında seçilir, değişmez."),
     ("Faaliyet gideri", "Sipariş bedelinden işletmenin genel masrafları (elektrik, bakım, kırtasiye vb.) için ayrılan pay."),

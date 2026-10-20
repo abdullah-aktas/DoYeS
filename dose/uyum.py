@@ -192,7 +192,8 @@ class _Denetci:
                     ogrencisiz.append(no)
                 if not s["personel_sayisi"]:
                     gorevsiz.append(no)
-            if not s["ogrenci_uygulamasi"] and durum not in ("Teklif", "Kapandı"):
+            teklif_asama = durum in M.SIPARIS_TEKLIF_ASAMALARI
+            if not s["ogrenci_uygulamasi"] and not teklif_asama and durum != "Kapandı":
                 ogr_yok.append(no)
             if durum in TESLIM_EDILMIS and not s["kabul_tarihi"]:
                 kabulsuz.append(no)
@@ -200,12 +201,12 @@ class _Denetci:
             if not s["fatura_sayisi"] and (durum in ("Faturalandı", "Kapandı") or
                                            (kabul and (self.bugun - kabul).days > FATURA_SURESI_GUN)):
                 faturasiz.append(f"{no} ({kabul:%d.%m.%Y})" if kabul else no)
-            if durum != "Teklif" and not (s["sozlesme_bedeli"] or 0):
+            if not teklif_asama and not (s["sozlesme_bedeli"] or 0):
                 bedelsiz.append(no)
             teslim = _tarih(s["teslim_tarihi"])
             if durum in ("Sözleşme İmzalandı", "Üretimde") and teslim and teslim < self.bugun:
                 gecikmis.append(f"{no} ({teslim:%d.%m.%Y})")
-            if durum not in ("Teklif", "Kapandı"):
+            if not teklif_asama and durum != "Kapandı":
                 yil = int((s["tarih"] or str(self.yil))[:4])
                 param.setdefault(yil, d.parametreler(yil))
                 h = siparis_kaydi_tahsisi(dict(s), param[yil]).hatalar

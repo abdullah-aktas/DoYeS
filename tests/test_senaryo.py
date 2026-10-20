@@ -222,6 +222,14 @@ class Senaryo(unittest.TestCase):
         from dose import belgeler
         t = Path(self.tmp.name)
         belgeler.teklif_mektubu(t / "teklif.pdf", self.siparis)
+        self.db.guncelle("siparis", self.siparis, {
+            "talep_kurum": "Derik İlçe Millî Eğitim Müdürlüğü", "talep_sayi": "E-123", "talep_tarih": f"{YIL}-03-01",
+            "kesif_ozet": "Elektrik panosu periyodik kontrol ihtiyacı tespit edildi.", "proforma_no": "PRF-1",
+            "proforma_tarih": f"{YIL}-03-05", "proforma_gecerlilik_gun": 30})
+        self.db.ekle("siparis_is_plani", {"siparis_id": self.siparis, "sira": 1, "kalem": "Pano kontrolü",
+                                          "aciklama": "Termal kamera", "miktar": 1, "birim": "Adet", "tahmini_saat": 2})
+        belgeler.kesif_is_plani(t / "kesif.pdf", self.siparis)
+        belgeler.proforma_fatura(t / "proforma.pdf", self.siparis)
         belgeler.siparis_sozlesmesi(t / "sozlesme.pdf", self.siparis, {"pesin_orani": 0})
         belgeler.gorevlendirme_onayi(t / "gorev.pdf", self.siparis)
         belgeler.muayene_kabul_tutanagi(t / "kabul.pdf", self.siparis)
@@ -246,8 +254,8 @@ class Senaryo(unittest.TestCase):
              "kalemler": [{"ad": "Zeytin", "miktar": "1000", "birim": "Kg"}], "yaklasik_maliyet": 0, "teslim_yeri": "",
              "firmalar": [{"ad": "Hasan Çiftçi", "tutar": 30000}, {"ad": "Firma B", "tutar": 31500}, {"ad": "Firma C", "tutar": 0}]}
         belgeler.dogrudan_temin_dosyasi(t / "temin.pdf", d)
-        for ad in ("teklif", "sozlesme", "gorev", "kabul", "veli", "mif", "maliyet", "istek", "gecici", "malzeme", "puantaj",
-                   "temin"):
+        for ad in ("teklif", "kesif", "proforma", "sozlesme", "gorev", "kabul", "veli", "mif", "maliyet", "istek",
+                   "gecici", "malzeme", "puantaj", "temin"):
             self.assertGreater((t / f"{ad}.pdf").stat().st_size, 1000)
         once = self._mizan_denk()
         muhasebe.tum_kayitlari_yeniden_uret()

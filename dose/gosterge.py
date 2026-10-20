@@ -108,7 +108,9 @@ def uyarilar(yil: int) -> list[tuple[str, str, str | None]]:
                  AND s.durum NOT IN ('İptal', 'Kapandı')""")
     for o in ogr[:10]:
         ekle(f"{o['ad_soyad']} ({o['siparis_no']}): veli muvafakatnamesi yok (Yön. md.8/1).", "hata", "Öğrenciler")
-    for s in d.q("SELECT siparis_no FROM siparis WHERE ogrenci_uygulamasi = 0 AND durum NOT IN ('İptal', 'Kapandı', 'Teklif')"):
+    from . import mevzuat as _M
+    teklifler = "', '".join(_M.SIPARIS_TEKLIF_ASAMALARI)
+    for s in d.q(f"SELECT siparis_no FROM siparis WHERE ogrenci_uygulamasi = 0 AND durum NOT IN ('İptal', 'Kapandı', '{teklifler}')"):
         ekle(f"{s['siparis_no']}: öğrencinin uygulamaya alınmadığı iş kabul edilemez.", "hata", "Siparişler / İş Emirleri")
 
     limit = p["dogrudan_temin_buyuksehir" if k.get("buyuksehir") else "dogrudan_temin_diger"]

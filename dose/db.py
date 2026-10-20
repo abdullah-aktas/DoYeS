@@ -119,6 +119,12 @@ CREATE TABLE IF NOT EXISTS siparis_gorevli (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     siparis_id INTEGER NOT NULL, kisi_turu TEXT, kisi_id INTEGER, gorev TEXT
 );
+CREATE TABLE IF NOT EXISTS siparis_is_plani (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    siparis_id INTEGER NOT NULL, sira INTEGER DEFAULT 1,
+    kalem TEXT NOT NULL, aciklama TEXT, birim TEXT, miktar REAL DEFAULT 1,
+    tahmini_saat REAL DEFAULT 0, notlar TEXT
+);
 CREATE TABLE IF NOT EXISTS fatura (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tur TEXT NOT NULL, belge_turu TEXT, belge_no TEXT, tarih TEXT, cari_id INTEGER, siparis_id INTEGER,
@@ -226,6 +232,15 @@ GOCLER = [
     ("fatura_kalem", "iskonto", "REAL DEFAULT 0"),
     ("siparis_kalem", "iskonto_orani", "REAL DEFAULT 0"),
     ("siparis_kalem", "iskonto", "REAL DEFAULT 0"),
+    ("siparis", "talep_sayi", "TEXT"),
+    ("siparis", "talep_tarih", "TEXT"),
+    ("siparis", "talep_kurum", "TEXT"),
+    ("siparis", "talep_ilgi", "TEXT"),
+    ("siparis", "kesif_tarih", "TEXT"),
+    ("siparis", "kesif_ozet", "TEXT"),
+    ("siparis", "proforma_no", "TEXT"),
+    ("siparis", "proforma_tarih", "TEXT"),
+    ("siparis", "proforma_gecerlilik_gun", "INTEGER DEFAULT 30"),
     ("islem_log", "rol", "TEXT"),
     ("islem_log", "ad_soyad", "TEXT"),
     ("islem_log", "bilgisayar", "TEXT"),
@@ -243,7 +258,7 @@ YENILEME_GEREKTIRMEYEN = ("Oturum açma", "Oturum kapatma", "Hata", "Yedekleme",
 TABLO_ADLARI = {
     "kurum": "kurum bilgileri", "parametre": "parametreler", "kullanici": "kullanıcı", "bolum": "bölüm",
     "personel": "personel", "ogrenci": "öğrenci", "cari": "cari hesap", "urun": "ürün", "maliyet_kalem": "maliyet",
-    "fiyat_tespit": "fiyat tespiti", "malzeme": "malzeme", "stok_hareket": "stok hareketi", "siparis": "sipariş",
+    "fiyat_tespit": "fiyat tespiti", "malzeme": "malzeme", "stok_hareket": "stok hareketi",     "siparis": "sipariş", "siparis_is_plani": "iş planı",
     "fatura": "fatura", "kasa_banka": "kasa/banka", "parca_basi": "parça başı bordrosu",
     "fazla_calisma": "fazla çalışma", "hazine_payi": "hazine payı", "yil_sonu": "yıl sonu dağıtımı",
     "utp_kisi": "ÜTP", "yevmiye": "yevmiye", "resmi_yazi": "resmi yazı", "onay_durum": "onay",

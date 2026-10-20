@@ -88,7 +88,7 @@ class OnayAkisi(unittest.TestCase):
         self.assertEqual(self.db.deger("SELECT durum FROM siparis WHERE id = ?", (sid,)), "Sözleşme İmzalandı")
         self.assertEqual([g["karar"] for g in onay.gecmis("Sipariş", sid)], ["Onaylandı"])
         onay.geri_al("Sipariş", sid, self.k["tmy"])
-        self.assertEqual(self.db.deger("SELECT durum FROM siparis WHERE id = ?", (sid,)), "Teklif")
+        self.assertEqual(self.db.deger("SELECT durum FROM siparis WHERE id = ?", (sid,)), "Proforma İletildi")
 
     def test_2_siparis_tam_akis(self):
         sid = self._siparis(self.gida)
@@ -117,7 +117,7 @@ class OnayAkisi(unittest.TestCase):
             onay.geri_al("Sipariş", sid, self.k["tmy"])
         onay.geri_al("Sipariş", sid, self.k["mudur"], "Sözleşme değişecek")
         self.assertEqual(self._durum("Sipariş", sid)["durum"], onay.HAZIRLANIYOR)
-        self.assertEqual(self.db.deger("SELECT durum FROM siparis WHERE id = ?", (sid,)), "Teklif")
+        self.assertEqual(self.db.deger("SELECT durum FROM siparis WHERE id = ?", (sid,)), "Proforma İletildi")
 
     def test_3_iade_ve_geri_cekme(self):
         sid = self._siparis(self.mobilya)
@@ -193,10 +193,10 @@ class OnayAkisi(unittest.TestCase):
                 rol = Oturum.rol()
                 UYARILAR.clear()
                 p = AnaPencere()
-                gorunen = {SAYFALAR[i][1] for i in p._satir_sayfa.values()}
+                gorunen = set(p.yan._sayfa_satir)
                 self.assertEqual(gorunen, {s for _g, s, _m, _c in SAYFALAR if yetki.sayfa_yetkisi(rol, s)})
-                for satir in p._satir_sayfa:
-                    p._sayfa_ac(satir)
+                for ad_sayfa in list(p.yan._sayfa_satir):
+                    p._sayfa_ac_ad(ad_sayfa)
                     self.assertEqual(Oturum.yazabilir(p.yigin.currentWidget()),
                                      yetki.sayfa_yetkisi(rol, Oturum.aktif_sayfa) == "y", Oturum.aktif_sayfa)
                 self.assertFalse([u for u in UYARILAR if u[0] == "hata"], UYARILAR)

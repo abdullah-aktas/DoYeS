@@ -122,9 +122,121 @@ def teklif_mektubu(yol: Path, s_id: int) -> Path:
         parca.append(P("İdareniz, 4734 sayılı Kamu İhale Kanununun 3 üncü maddesinin (e) bendi gereğince Bakanlığımıza bağlı "
                        "döner sermaye işletmelerinden mal ve hizmet alımlarını ihale yapmaksızın gerçekleştirebilir. İşin, "
                        "işletmemizce bizzat üretileceğini taahhüt ederiz.", S_METIN))
-    parca.append(P(f"Teslim süresi: {tarih_tr(s['teslim_tarihi']) or 'sözleşmede belirtilecektir'}. Teklifimiz 30 gün geçerlidir.", S_METIN))
+    gun = int(s.get("proforma_gecerlilik_gun") or 30)
+    parca.append(P(f"Teslim süresi: {tarih_tr(s['teslim_tarihi']) or 'sözleşmede belirtilecektir'}. Teklifimiz {gun} gün geçerlidir.", S_METIN))
     parca.append(imza_blogu([("Harcama Yetkilisi<br/>Okul Müdürü", k.get("harcama_yetkilisi"))], 1))
     return olustur(yol, parca, baslik="Fiyat Teklifi")
+
+
+def proforma_fatura(yol: Path, s_id: int) -> Path:
+    """Proforma fatura: ticari teklif niteliğindedir; e-Fatura / vergi belgesi değildir (VUK, e-Belge).
+
+    İlçe MEM / kamu okul taleplerinde (keşif + maliyet + iletim) kullanılır. Kabul sonrası asıl sözleşme
+    ve teslimde e-Arşiv/e-Fatura kesilir.
+    """
+    from datetime import timedelta
+    s, kalemler = _siparis_bilgi(s_id)
+    k = _kurum()
+    gun = int(s.get("proforma_gecerlilik_gun") or 30)
+    p_tarih = s.get("proforma_tarih") or s.get("tarih") or date.today().isoformat()
+    try:
+        bitis = date.fromisoformat(str(p_tarih)[:10]) + timedelta(days=gun)
+    except ValueError:
+        bitis = date.today() + timedelta(days=gun)
+    no = s.get("proforma_no") or s.get("siparis_no") or ""
+    parca = antet(k, f"{k.get('evrak_kodu') or ''}", "Proforma Fatura", p_tarih)
+    parca += [
+        P("PROFORMA FATURA", S_BASLIK),
+        P(f"Proforma No: <b>{no}</b> &nbsp;&nbsp; Sipariş / iş no: {s.get('siparis_no') or '—'}", S_ORTA),
+        Spacer(1, 2 * mm),
+        P("<b>Bu belge vergi mevzuatı bakımından fatura değildir.</b> Yalnızca fiyat ve iş kapsamı teklifidir; "
+          "KDV ve diğer yükümlülükler kabul ve sözleşme sonrası kesilecek e-Fatura / e-Arşiv fatura ile doğar "
+          "(213 sayılı VUK ve e-Belge uygulamaları). DÖSE Yönetmeliği md.9/4 gereği sözleşme imzalanmadan işe başlanmaz.",
+          S_METIN),
+        Spacer(1, 3 * mm),
+    ]
+    if s.get("talep_sayi") or s.get("talep_kurum"):
+        parca.append(bilgi_tablosu([
+            ("Talep eden / muhatap", s.get("talep_kurum") or s.get("unvan") or ""),
+            ("Talep yazı sayı / tarih", f"{s.get('talep_sayi') or '—'} / {tarih_tr(s.get('talep_tarih')) or '—'}"),
+            ("İlgi", s.get("talep_ilgi") or "—"),
+        ]))
+        parca.append(Spacer(1, 2 * mm))
+    parca.append(bilgi_tablosu([
+        ("Müşteri (işi yaptıran)", f"{s.get('unvan') or ''}<br/>VKN/TCKN: {s.get('vkn_tckn') or ''}"),
+        ("İşin konusu", s.get("konu") or ""),
+        ("Bölüm / atölye", s.get("bolum_ad") or ""),
+        ("Keşif / inceleme tarihi", tarih_tr(s.get("kesif_tarih")) or "—"),
+        ("Geçerlilik", f"{gun} gün (son: {tarih_tr(bitis.isoformat())})"),
+    ]))
+    if s.get("kesif_ozet"):
+        parca += [Spacer(1, 2 * mm), P("<b>Keşif / tespit özeti</b>", S_ALT_BASLIK), P(s["kesif_ozet"], S_METIN)]
+    plan = al().q("SELECT * FROM siparis_is_plani WHERE siparis_id = ? ORDER BY sira, id", (s_id,))
+    if plan:
+        parca += [Spacer(1, 3 * mm), P("<b>Önerilen iş planı (bakım / onarım / kontrol kalemleri)</b>", S_ALT_BASLIK)]
+        satirlar = [[p["sira"] or i + 1, p["kalem"], p.get("aciklama") or "", p.get("miktar") or "",
+                     p.get("birim") or "", p.get("tahmini_saat") or ""] for i, p in enumerate(plan)]
+        parca.append(tablo(["Sıra", "İş kalemi", "Açıklama", "Miktar", "Birim", "Tahmini saat"], satirlar,
+                           [12 * mm, 40 * mm, 55 * mm, 18 * mm, 16 * mm, 22 * mm], {3, 5}))
+    parca += [Spacer(1, 3 * mm), P("<b>Malzeme ve işçilik bedeli (KDV hariç birim fiyatlar)</b>", S_ALT_BASLIK)]
+    t, ozet, _, _ = _kalem_tablosu(kalemler, s["kdv_orani"] or 0)
+    parca += [t, Spacer(1, 2 * mm), ozet, Spacer(1, 3 * mm)]
+    if s.get("kamu_kurumu"):
+        parca.append(P("Kamu idareleri, 4734 sayılı Kanunun 3/e bendi kapsamında Bakanlığımıza bağlı döner sermaye "
+                       "işletmelerinden mal ve hizmeti ihalesiz temin edebilir. İş, okulumuz atölyelerinde öğrencilerimizin "
+                       "uygulamalı eğitimi kapsamında bizzat üretilecektir.", S_METIN))
+    parca.append(P("Teklifinizin uygun bulunması hâlinde, iş ve işlemler okulumuz Döner Sermaye İşletmesi üzerinden "
+                   "sözleşme imzalanarak yürütülecektir. Peşinat ve ödeme koşulları sözleşmede belirtilir.", S_METIN))
+    parca.append(imza_blogu([
+        ("Keşfi yapan / hazırlayan<br/>Bölüm-Atölye Şefi", _sef(s.get("bolum_id"))),
+        ("Gerçekleştirme Görevlisi", k.get("gerceklestirme_gorevlisi")),
+        ("Harcama Yetkilisi<br/>Okul Müdürü", k.get("harcama_yetkilisi")),
+    ], 3, True))
+    return olustur(yol, parca, baslik="Proforma Fatura")
+
+
+def kesif_is_plani(yol: Path, s_id: int) -> Path:
+    """Yerinde inceleme ve ihtiyaç duyulan bakım/onarım/kontrol iş planı tutanağı."""
+    s, _ = _siparis_bilgi(s_id)
+    k = _kurum()
+    plan = al().q("SELECT * FROM siparis_is_plani WHERE siparis_id = ? ORDER BY sira, id", (s_id,))
+    parca = antet(k, f"{k.get('evrak_kodu') or ''}", "Keşif ve İş Planı", s.get("kesif_tarih") or s.get("tarih"))
+    parca += [
+        P("KEŞİF / İNCELEME VE İŞ PLANI TUTANAĞI", S_BASLIK),
+        Spacer(1, 2 * mm),
+        bilgi_tablosu([
+            ("Sipariş / iş no", s.get("siparis_no") or ""),
+            ("Talep eden", s.get("talep_kurum") or s.get("unvan") or ""),
+            ("Talep yazısı", f"{s.get('talep_sayi') or '—'} — {tarih_tr(s.get('talep_tarih')) or '—'}"),
+            ("İlgi", s.get("talep_ilgi") or "—"),
+            ("İşin konusu", s.get("konu") or ""),
+            ("Keşif tarihi", tarih_tr(s.get("kesif_tarih")) or tarih_tr(date.today())),
+            ("Bölüm / atölye", s.get("bolum_ad") or ""),
+        ]),
+        Spacer(1, 3 * mm),
+        P("Yetkili teknik personelce yapılan inceleme sonucunda ihtiyaç duyulan kontrol, bakım ve onarım işleri "
+          "aşağıda planlanmıştır. Malzeme ve işçilik giderlerini içeren maliyet hesabı ile proforma fatura ayrıca "
+          "hazırlanarak talep sahibine iletilecektir.", S_METIN),
+        Spacer(1, 3 * mm),
+    ]
+    if s.get("kesif_ozet"):
+        parca += [P("<b>Tespit ve değerlendirme</b>", S_ALT_BASLIK), P(s["kesif_ozet"], S_METIN), Spacer(1, 2 * mm)]
+    if plan:
+        satirlar = [[p["sira"] or i + 1, p["kalem"], p.get("aciklama") or "",
+                     f"{p.get('miktar') or ''} {p.get('birim') or ''}".strip(),
+                     p.get("tahmini_saat") or "", p.get("notlar") or ""] for i, p in enumerate(plan)]
+        parca.append(tablo(["Sıra", "İş kalemi", "Açıklama / kapsam", "Miktar", "Saat", "Not"], satirlar,
+                           [12 * mm, 38 * mm, 50 * mm, 22 * mm, 16 * mm, 28 * mm], {4}))
+    else:
+        parca.append(P("(İş planı kalemi girilmemiştir — sipariş kartındaki «Talep ve iş planı» sekmesinden ekleyiniz.)", S_KUCUK))
+    parca += [Spacer(1, 4 * mm),
+              P("İşbu tutanak, DÖSE mevzuatı kapsamında döner sermaye işletmesinde değerlendirilmek üzere düzenlenmiştir.", S_METIN)]
+    parca.append(imza_blogu([
+        ("İncelemeyi yapan teknik personel", _sef(s.get("bolum_id"))),
+        ("Gerçekleştirme Görevlisi", k.get("gerceklestirme_gorevlisi")),
+        ("Harcama Yetkilisi<br/>Okul Müdürü", k.get("harcama_yetkilisi")),
+    ], 3, True))
+    return olustur(yol, parca, baslik="Keşif ve İş Planı")
 
 
 def siparis_sozlesmesi(yol: Path, s_id: int, tahsis) -> Path:
