@@ -202,18 +202,20 @@ export DOSE_KOK=/opt/dose/program
 # Mobil sunucu: exe_olustur.bat masaüstü programla birlikte mobil sunucuyu da üretir,
 # dist\DOSE_Yonetim\MobilSunucu klasörüne koyar ve kurulum dosyasına ekler (Başlat menüsünde kısayolu olur).
 
-# Android APK (Flet / Flutter motoru, Android SDK ve JDK 17 kurulu olmalı)
-# Proje yolunda Türkçe harf, Android SDK yolunda boşluk olmamalıdır.
-xcopy /E /I mobil C:\dose_mobil
-cd C:\dose_mobil
-set ANDROID_HOME=C:\AndroidSdk
-flet build apk --yes
-# Çıktı: C:\dose_mobil\build\apk\*.apk -> mobil\DOSE_Mobil.apk olarak kopyalayın;
-# exe_olustur.bat bu dosyayı kurulum paketine (program klasöründeki "mobil" altına) ekler.
+# İmzalı APK + Google Play AAB (önerilen)
+# Önce: mobil\android\signing.env.example → signing.env (şifreler) ve upload-keystore.p12
+cd D:\DÖSE\mobil
+apk_aab_olustur.bat
+# Çıktı:
+#   mobil\DOSE_Mobil.apk              → yan yükleme / kurulum paketi
+#   mobil\store\DOSE_Mobil_<sürüm>.apk
+#   mobil\store\DOSE_Mobil_<sürüm>.aab → Play Console «Üretim» yüklemesi
 ```
 
 - Sürüm: `mobil\pyproject.toml`, `mobil\uygulama.py` (`SURUM`) ve `dose\__init__.py` (`SURUM`) aynı tutulmalıdır.
-- Play Store: `flet build aab` + imza (`[tool.flet.android.signing]`).
+- Play ikonu: `mobil\assets\ikon.png` ve mağaza listesi için `mobil\assets\store\icon-512.png` / `icon-1024.png`.
+- **iOS / App Store:** IPA yalnız **macOS + Xcode + Apple Developer** ile üretilir (`flet build ipa`). Windows’ta derlenemez. Bundle id: `tr.k12.meb.derikmtal.dosemobil` (`[tool.flet.ios]`).
+- Keystore (`upload-keystore.p12`) ve `signing.env` Git’e **konmaz**; yedeklerini güvenli saklayın — kaybolursa Play güncellemesi yapılamaz.
 
 ### 4.4 Lisans ve mobil
 

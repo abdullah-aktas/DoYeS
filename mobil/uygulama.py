@@ -16,7 +16,7 @@ try:
 except ImportError:
     from istemci import ApiHatasi, Istemci
 
-SURUM = "1.7.1"
+SURUM = "1.7.2"
 SATICI = "Derik MTAL Döner Sermaye İşletmesi"
 
 # Satıcı paketlemeden önce geçit adresini yazabilir. Boşsa: LAN keşif → GitHub surum.json → kayıtlı adres.
@@ -294,6 +294,8 @@ class Uygulama:
             self.b_giris.disabled, self.b_giris.content = False, "Giriş yap"
             self.page.update()
             return
+        self.l_hata.value = ""
+        self.page.update()
         ek = {"X-Istemci-IP": self.page.client_ip or ""} if self.web else {}
         self.api = Istemci(adres, sertifika_dogrula=not (self.web or self.c_sertifika.value), ek_basliklar=ek)
         try:

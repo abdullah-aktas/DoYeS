@@ -8,7 +8,13 @@ dist/
 *.spec
 kurulum_paketi/
 *.apk
+*.aab
 mobil/DOSE_Mobil.apk
+mobil/store/*.apk
+mobil/store/*.aab
+mobil/android/*.p12
+mobil/android/*.jks
+mobil/android/signing.env
 satici/ozel_anahtar.pem
 satici/lisanslar.csv
 satici/lisanslar/

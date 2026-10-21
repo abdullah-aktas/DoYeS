@@ -23,7 +23,7 @@ python main.py
 
 Kurulum paketini üretmek: `exe_olustur.bat` → `kurulum_paketi\DOSE_Yonetim_Kurulum_<sürüm>.exe`
 
-Ayrıntılı kurulum: [`KURULUM.md`](KURULUM.md) · Satış / barındırma: [`SATIS_REHBERI.md`](SATIS_REHBERI.md)
+Ayrıntılı kurulum: [`KURULUM.md`](KURULUM.md) · Teknik servis / programcı: [`TEKNIK_SERVIS_KILAVUZU.md`](TEKNIK_SERVIS_KILAVUZU.md) · Satış / barındırma: [`SATIS_REHBERI.md`](SATIS_REHBERI.md)
 
 ## Geçit adresi zorunlu mu?
 

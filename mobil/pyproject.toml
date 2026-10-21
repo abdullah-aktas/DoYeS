@@ -1,6 +1,6 @@
 [project]
 name = "dose-mobil"
-version = "1.7.1"
+version = "1.7.2"
 description = "DÖSE Yönetim mobil uygulaması: onaylar, iş talepleri, fazla çalışma, özet raporlar"
 authors = [{ name = "Derik MTAL Döner Sermaye İşletmesi" }]
 requires-python = ">=3.10"
@@ -11,6 +11,8 @@ org = "tr.k12.meb.derikmtal"
 product = "DÖSE Mobil"
 company = "Derik MTAL Döner Sermaye İşletmesi"
 copyright = "Copyright (C) 2026 Derik MTAL Döner Sermaye İşletmesi"
+# Android applicationId / iOS bundle id: tr.k12.meb.derikmtal.dosemobil
+bundle_id = "tr.k12.meb.derikmtal.dosemobil"
 
 [tool.flet.app]
 path = "."
@@ -25,3 +27,15 @@ icon = "assets/ikon.png"
 "android.permission.ACCESS_NETWORK_STATE" = true
 "android.permission.ACCESS_WIFI_STATE" = true
 "android.permission.CHANGE_WIFI_MULTICAST_STATE" = true
+
+# Play Console yükleme imzası.
+# key_store yolu göreli olursa Gradle yanlış klasörde arar; apk_aab_olustur.bat
+# mutlak yolu FLET_ANDROID_SIGNING_KEY_STORE ile verir. Şifreler android/signing.env'de.
+[tool.flet.android.signing]
+key_alias = "doseupload"
+
+# App Store / TestFlight — IPA derlemesi yalnız macOS + Xcode + Apple Developer hesabı ile yapılır.
+[tool.flet.ios]
+icon = "assets/ikon.png"
+# team_id / provisioning_profile / signing_certificate: Mac'te Apple hesabınızla doldurun.
+# export_method = "app-store"
