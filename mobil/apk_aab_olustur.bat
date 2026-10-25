@@ -28,9 +28,12 @@ set "PYTHONIOENCODING=utf-8"
 set "FLET_CLI_NO_RICH_OUTPUT=1"
 set "GRADLE_OPTS=-Dorg.gradle.daemon=false"
 
-set "BUILD_SRC=C:\dose_mobil"
+set "BUILD_SRC=%TEMP%\dose_mobil_%RANDOM%_%RANDOM%_%RANDOM%"
+if exist "%BUILD_SRC%" (
+    echo Gecici derleme klasoru zaten var; yeniden deneyin.
+    exit /b 1
+)
 echo Kaynak kopyalaniyor -^> %BUILD_SRC%
-if exist "%BUILD_SRC%" rmdir /s /q "%BUILD_SRC%" 2>nul
 mkdir "%BUILD_SRC%" 2>nul
 robocopy "%cd%" "%BUILD_SRC%" /E /XD __pycache__ build .dart_tool store /XF DOSE_Mobil.apk *.aab /NFL /NDL /NJH /NJS /nc /ns /np
 if errorlevel 8 goto hata
@@ -39,10 +42,12 @@ rem Mutlak keystore yolu (Gradle goreli yolu yanlis cozer)
 set "FLET_ANDROID_SIGNING_KEY_STORE=%BUILD_SRC%\android\upload-keystore.p12"
 if not exist "%FLET_ANDROID_SIGNING_KEY_STORE%" (
     echo Keystore yok: %FLET_ANDROID_SIGNING_KEY_STORE%
-    exit /b 1
+    goto hata
 )
 
 cd /d "%BUILD_SRC%"
+for %%I in ("%USERPROFILE%") do set "USERPROFILE_SHORT=%%~sI"
+if defined USERPROFILE_SHORT set "USERPROFILE=%USERPROFILE_SHORT%"
 
 for /f "delims=" %%V in ('python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"') do set SURUM=%%V
 for /f "delims=" %%N in ('python -c "v='%SURUM%'.split('.'); print(int(v[0])*10000+int(v[1])*100+int(v[2]))"') do set BUILD_NO=%%N
@@ -50,7 +55,7 @@ echo Surum %SURUM%  build-number %BUILD_NO%
 
 echo.
 echo === APK ===
-flet build apk --yes --build-number %BUILD_NO% --build-version %SURUM% ^
+flet build apk --yes --exclude android --android-legacy-packaging --build-number %BUILD_NO% --build-version %SURUM% ^
   --android-signing-key-store "%FLET_ANDROID_SIGNING_KEY_STORE%" ^
   --android-signing-key-store-password "%FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD%" ^
   --android-signing-key-password "%FLET_ANDROID_SIGNING_KEY_PASSWORD%" ^
@@ -59,7 +64,7 @@ if errorlevel 1 goto hata
 
 echo.
 echo === AAB (Google Play) ===
-flet build aab --yes --build-number %BUILD_NO% --build-version %SURUM% ^
+flet build aab --yes --exclude android --android-legacy-packaging --build-number %BUILD_NO% --build-version %SURUM% ^
   --android-signing-key-store "%FLET_ANDROID_SIGNING_KEY_STORE%" ^
   --android-signing-key-store-password "%FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD%" ^
   --android-signing-key-password "%FLET_ANDROID_SIGNING_KEY_PASSWORD%" ^
@@ -68,12 +73,19 @@ if errorlevel 1 goto hata
 
 set "OUT=%~dp0store"
 if not exist "%OUT%" mkdir "%OUT%"
-for %%F in (build\apk\*.apk) do copy /y "%%F" "%~dp0DOSE_Mobil.apk" >nul & copy /y "%%F" "%OUT%\DOSE_Mobil_%SURUM%.apk" >nul
-for %%F in (build\aab\*.aab) do copy /y "%%F" "%OUT%\DOSE_Mobil_%SURUM%.aab" >nul
+for %%F in (build\apk\*.apk) do (
+    copy /y "%%F" "%~dp0DOSE_Mobil.apk" >nul || goto hata
+    copy /y "%%F" "%OUT%\DOSE_Mobil_%SURUM%.apk" >nul || goto hata
+)
+for %%F in (build\aab\*.aab) do (
+    copy /y "%%F" "%OUT%\DOSE_Mobil_%SURUM%.aab" >nul || goto hata
+)
 
 echo.
 echo Tamamlandi:
 dir /b "%~dp0DOSE_Mobil.apk" "%OUT%\DOSE_Mobil_%SURUM%.*"
+if exist "%BUILD_SRC%\" rmdir /s /q "%BUILD_SRC%"
+if exist "%BUILD_SRC%\" goto hata
 echo.
 echo Google Play: store\DOSE_Mobil_%SURUM%.aab yukleyin.
 echo iOS: Bu Windows PC'de IPA uretilemez. Mac'te ayni kaynakla:
@@ -84,4 +96,5 @@ exit /b 0
 
 :hata
 echo Derleme basarisiz.
+if defined BUILD_SRC if exist "%BUILD_SRC%\" rmdir /s /q "%BUILD_SRC%"
 exit /b 1

@@ -1,6 +1,6 @@
 [project]
 name = "dose-mobil"
-version = "1.7.2"
+version = "1.7.3"
 description = "DÖSE Yönetim mobil uygulaması: onaylar, iş talepleri, fazla çalışma, özet raporlar"
 authors = [{ name = "Derik MTAL Döner Sermaye İşletmesi" }]
 requires-python = ">=3.10"
@@ -16,11 +16,13 @@ bundle_id = "tr.k12.meb.derikmtal.dosemobil"
 
 [tool.flet.app]
 path = "."
+exclude = ["android"]
 
 [tool.flet.android]
 split_per_abi = false
 adaptive_icon_background = "#1f4e79"
 icon = "assets/ikon.png"
+legacy_packaging = true
 
 [tool.flet.android.permission]
 "android.permission.INTERNET" = true

@@ -6,8 +6,10 @@ bu bilgisayardaki Windows kullanıcısına bağlı olarak şifrelenir; dosya ba�
 import base64
 import ctypes
 import json
+import os
 import sys
 from dataclasses import asdict, dataclass, fields
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .yollar import VERI
 
@@ -82,6 +84,21 @@ def coz(metin: str) -> str:
 
 # ---------------------------------------------------------------- okuma / yazma
 def oku() -> BaglantiAyari:
+    dsn = os.environ.get("DOSE_DATABASE_URL", "").strip()
+    if dsn:
+        url = urlsplit(dsn)
+        if url.scheme not in ("postgres", "postgresql") or not url.hostname or not url.path.strip("/"):
+            raise ValueError("DOSE_DATABASE_URL geçerli bir PostgreSQL bağlantı adresi olmalıdır.")
+        query = parse_qs(url.query)
+        return BaglantiAyari(
+            tur="sunucu",
+            sunucu=url.hostname,
+            port=url.port or 5432,
+            veritabani=unquote(url.path.lstrip("/")),
+            kullanici=unquote(url.username or ""),
+            sifre=unquote(url.password or ""),
+            ssl=query.get("sslmode", ["require"])[0],
+        )
     try:
         veri = json.loads(AYAR_DOSYASI.read_text(encoding="utf-8"))
     except (OSError, ValueError):

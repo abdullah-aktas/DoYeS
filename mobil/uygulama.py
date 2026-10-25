@@ -6,6 +6,7 @@ sunucunun kendisinde çalışır; tarayıcıya ayrıca bir şey kurulmaz.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from datetime import date, datetime
 
@@ -16,7 +17,7 @@ try:
 except ImportError:
     from istemci import ApiHatasi, Istemci
 
-SURUM = "1.7.2"
+SURUM = "1.7.3"
 SATICI = "Derik MTAL Döner Sermaye İşletmesi"
 
 # Satıcı paketlemeden önce geçit adresini yazabilir. Boşsa: LAN keşif → GitHub surum.json → kayıtlı adres.
@@ -72,17 +73,21 @@ def iso_tarih(metin, ad: str = "Tarih") -> str | None:
 
 
 def satir(baslik: str, deger, kalin: bool = False, renk=None) -> ft.Row:
-    return ft.Row([ft.Text(baslik, color=ft.Colors.GREY_700, expand=True),
-                   ft.Text(str(deger if deger not in (None, "") else "-"), weight=ft.FontWeight.BOLD if kalin else None,
-                           color=renk, text_align=ft.TextAlign.RIGHT, expand=True, selectable=True)])
+    return ft.Row([ft.Text(baslik, color=ft.Colors.GREY_700, expand=True, size=12),
+                   ft.Text(str(deger if deger not in (None, "") else "-"),
+                           weight=ft.FontWeight.BOLD if kalin else ft.FontWeight.W_500,
+                           color=renk or ft.Colors.GREY_900, text_align=ft.TextAlign.RIGHT, expand=True,
+                           selectable=True)])
 
 
 def baslik(metin: str) -> ft.Text:
-    return ft.Text(metin, size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.TEAL_800)
+    return ft.Text(metin, size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_900)
 
 
 def kart(*kontroller, renk=None) -> ft.Card:
-    return ft.Card(content=ft.Container(ft.Column(list(kontroller), spacing=6), padding=12, bgcolor=renk, border_radius=12))
+    return ft.Card(elevation=1, bgcolor=ft.Colors.WHITE,
+                   content=ft.Container(ft.Column(list(kontroller), spacing=8), padding=16,
+                                        bgcolor=renk or ft.Colors.WHITE, border_radius=16))
 
 
 def mesaj_kutusu(metinler: list[str], seviye: str) -> ft.Container:
@@ -109,6 +114,9 @@ class Uygulama:
         self.sekmeler: list = []
         self.sekme = 0
         self.fc_surum = None
+        self._sync_cursor = 0
+        self._sync_task: asyncio.Task | None = None
+        self._sync_kesinti = False
 
     # ------------------------------------------------------------ altyapı
     async def baslat(self):
@@ -116,6 +124,8 @@ class Uygulama:
         p.title = "DÖSE Yönetim Mobil"
         p.theme = ft.Theme(color_scheme_seed=ft.Colors.TEAL)
         p.theme_mode = ft.ThemeMode.LIGHT
+        p.bgcolor = ft.Colors.GREY_50
+        p.padding = 0
         p.on_view_pop = self._view_pop
         await self.giris_ekrani()
 
@@ -221,37 +231,53 @@ class Uygulama:
         self.t_kurum = ft.TextField(label="Kurum kodu", value=await self._tercih("kurum_kodu"),
                                     hint_text="MEB kurum kodu (5–8 rakam)", prefix_icon=ft.Icons.TAG,
                                     keyboard_type=ft.KeyboardType.NUMBER, autocorrect=False,
+                                    filled=True, border=ft.OutlineInputBorder(border_radius=12),
                                     helper="Adres yazmadan: aynı Wi-Fi'de sunucu keşfedilir veya GitHub geçidi kullanılır.")
         self.t_kullanici = ft.TextField(label="Kullanıcı adı", value=await self._tercih("kullanici"),
-                                        prefix_icon=ft.Icons.PERSON, autocorrect=False, enable_suggestions=False)
+                                        prefix_icon=ft.Icons.PERSON, autocorrect=False, enable_suggestions=False,
+                                        filled=True, border=ft.OutlineInputBorder(border_radius=12))
         self.t_sifre = ft.TextField(label="Şifre", password=True, can_reveal_password=True, prefix_icon=ft.Icons.LOCK,
-                                    on_submit=self.giris_yap)
+                                    on_submit=self.giris_yap, filled=True,
+                                    border=ft.OutlineInputBorder(border_radius=12))
         self.t_adres = ft.TextField(label="Sunucu adresi (gerekirse)", value=adres or gecit,
                                     hint_text="ör. 192.168.1.10:8765 — genelde boş bırakın",
                                     prefix_icon=ft.Icons.DNS, keyboard_type=ft.KeyboardType.URL,
+                                    filled=True, border=ft.OutlineInputBorder(border_radius=12),
                                     visible=False)
         self.c_sertifika = ft.Checkbox(label="Okulun kendi (imzasız) sertifikasına güven", visible=False,
                                        value=await self._tercih("sertifika_guven") == "1")
         self.b_gelismis = ft.TextButton("Gelişmiş: sunucu adresi…", on_click=self._gelismis_ac)
         self.b_gelismis.visible = not self.web
-        self.l_hata = ft.Text(mesaj, color=ft.Colors.RED_700, selectable=True)
-        self.b_giris = ft.FilledButton("Giriş yap", icon=ft.Icons.LOGIN, on_click=self.giris_yap, height=48)
-        logo = ft.Image(src="logo.png", width=220, fit=ft.BoxFit.CONTAIN,
-                        error_content=ft.Icon(ft.Icons.ACCOUNT_BALANCE, size=64, color=ft.Colors.TEAL_700))
+        self.l_hata = ft.Text(mesaj, color=ft.Colors.RED_800, selectable=True)
+        self.b_giris = ft.FilledButton("Giriş yap", icon=ft.Icons.LOGIN, on_click=self.giris_yap, height=52)
+        logo = ft.Image(src="logo.png", width=132, height=72, fit=ft.BoxFit.CONTAIN,
+                        error_content=ft.Icon(ft.Icons.ACCOUNT_BALANCE, size=48, color=ft.Colors.TEAL_700))
+        self.hata_alani = ft.Container(self.l_hata, padding=12, bgcolor=ft.Colors.RED_50,
+                                       border_radius=12, visible=bool(mesaj))
+        ekran_genisligi = getattr(self.page, "width", None) or 500
+        kart_genisligi = max(240, min(460, ekran_genisligi - 32))
+        giris_karti = ft.Container(
+            ft.Column([
+                ft.Container(logo, alignment=ft.Alignment.CENTER),
+                ft.Text("DÖSE Yönetim", size=26, weight=ft.FontWeight.BOLD,
+                        color=ft.Colors.BLUE_GREY_900, text_align=ft.TextAlign.CENTER),
+                ft.Text("Okul hesabınızla güvenli şekilde giriş yapın.",
+                        color=ft.Colors.BLUE_GREY_600, text_align=ft.TextAlign.CENTER),
+                ft.Divider(height=12, color=ft.Colors.GREY_200),
+                self.t_kurum, self.t_kullanici, self.t_sifre,
+                self.b_gelismis, self.t_adres, self.c_sertifika, self.hata_alani, self.b_giris,
+            ], horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=14),
+            width=kart_genisligi, padding=24, bgcolor=ft.Colors.WHITE, border_radius=22,
+            border=ft.Border.all(1, ft.Colors.GREY_200),
+        )
         icerik = ft.Column([
-            ft.Container(height=16),
-            ft.Container(logo, alignment=ft.Alignment.CENTER),
-            ft.Text("DÖSE Yönetim", size=26, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
-            ft.Text("Kurum kodu + kullanıcı + şifre yeterli", color=ft.Colors.GREY_700, text_align=ft.TextAlign.CENTER),
-            ft.Container(height=8),
-            self.t_kurum, self.t_kullanici, self.t_sifre, self.b_gelismis, self.t_adres, self.c_sertifika,
-            self.l_hata, self.b_giris,
-            ft.Container(height=16),
-            ft.Text(f"Sürüm {SURUM} • {SATICI}", size=11, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER),
-        ], horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=12, scroll=ft.ScrollMode.AUTO)
+            giris_karti,
+            ft.Text(f"Sürüm {SURUM}  •  {SATICI}", size=11, color=ft.Colors.BLUE_GREY_500,
+                    text_align=ft.TextAlign.CENTER),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=16, scroll=ft.ScrollMode.AUTO)
         self.page.views.clear()
-        self.page.views.append(ft.View(route="/", padding=20, controls=[
-            ft.SafeArea(ft.Container(icerik, width=460, alignment=ft.Alignment.TOP_CENTER), expand=True)],
+        self.page.views.append(ft.View(route="/", padding=16, bgcolor=ft.Colors.GREY_50, controls=[
+            ft.SafeArea(ft.Container(icerik, width=kart_genisligi, alignment=ft.Alignment.CENTER), expand=True)],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER))
         self.page.update()
         self.page.run_task(self._guncelleme_kontrol_giris)
@@ -277,13 +303,16 @@ class Uygulama:
         ad, sifre = (self.t_kullanici.value or "").strip(), self.t_sifre.value or ""
         if not kurum or not ad or not sifre:
             self.l_hata.value = "Kurum kodu, kullanıcı adı ve şifreyi giriniz."
+            self.hata_alani.visible = True
             self.page.update()
             return
         if not kurum.isdigit() or not (5 <= len(kurum) <= 8):
             self.l_hata.value = "Kurum kodu 5–8 rakam olmalıdır."
+            self.hata_alani.visible = True
             self.page.update()
             return
         self.b_giris.disabled, self.l_hata.value = True, "Sunucu aranıyor…"
+        self.hata_alani.visible = True
         self.b_giris.content = "Bağlanıyor…"
         self.page.update()
         try:
@@ -291,6 +320,7 @@ class Uygulama:
                 self._adres_coz, kurum, "" if self.web else (self.t_adres.value or ""))
         except ValueError as h:
             self.l_hata.value = str(h)
+            self.hata_alani.visible = True
             self.b_giris.disabled, self.b_giris.content = False, "Giriş yap"
             self.page.update()
             return
@@ -302,6 +332,7 @@ class Uygulama:
             y = await asyncio.to_thread(self.api.giris, ad, sifre, await self.cihaz_adi(), kurum)
         except ApiHatasi as h:
             self.l_hata.value = str(h)
+            self.hata_alani.visible = True
             self.b_giris.disabled, self.b_giris.content = False, "Giriş yap"
             self.page.update()
             return
@@ -395,7 +426,8 @@ class Uygulama:
         bekleyen = ben.get("bekleyen_onay") or 0
         self.nav = ft.NavigationBar(selected_index=0, on_change=self._sekme_degisti, destinations=[
             ft.NavigationBarDestination(icon=ikon, label=etiket, badge=str(bekleyen) if a == "onay" and bekleyen else None)
-            for a, etiket, ikon, _ in self.sekmeler])
+            for a, etiket, ikon, _ in self.sekmeler],
+            bgcolor=ft.Colors.WHITE, indicator_color=ft.Colors.TEAL_50, elevation=2)
         self.govde = ft.Container(expand=True)
         self.halka = ft.ProgressRing(width=18, height=18, stroke_width=2, visible=False)
         k = ben["kullanici"]
@@ -404,8 +436,9 @@ class Uygulama:
             ft.PopupMenuItem(content=ft.Text(f"{k.get('ad_soyad') or k['kullanici_adi']}\n{k['rol']}"), disabled=True),
             ft.PopupMenuItem(content="Şifre değiştir", icon=ft.Icons.PASSWORD, on_click=lambda e: self.sifre_ekrani()),
             ft.PopupMenuItem(content="Çıkış", icon=ft.Icons.LOGOUT, on_click=self.cikis)])
-        self.ana = ft.View(route="/ana", padding=0, navigation_bar=self.nav,
-                           appbar=ft.AppBar(title=ft.Text(kurum, size=16), actions=[
+        self.ana = ft.View(route="/ana", padding=0, bgcolor=ft.Colors.GREY_50, navigation_bar=self.nav,
+                           appbar=ft.AppBar(title=ft.Text(kurum, size=16, weight=ft.FontWeight.W_600),
+                                            bgcolor=ft.Colors.WHITE, elevation=0, actions=[
                                ft.Container(self.halka, padding=ft.Padding.only(right=8)),
                                ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", on_click=self.sekme_yenile), menu]),
                            controls=[ft.SafeArea(self.govde, expand=True)])
@@ -416,6 +449,37 @@ class Uygulama:
             self.bildir(ben.get("lisans") or "Program salt okunur çalışıyor.")
         self.sekme = 0
         await self.sekme_yenile()
+        if isinstance(self.page, ft.Page):
+            if self._sync_task and not self._sync_task.done():
+                self._sync_task.cancel()
+            self._sync_task = asyncio.create_task(self._es_zamanli_izle())
+
+    async def _es_zamanli_izle(self):
+        while self.api and self.api.token:
+            try:
+                sonuc = await asyncio.to_thread(self.api.get, "/senkron", son_no=self._sync_cursor)
+                self._sync_cursor = sonuc["son_no"]
+                degisiklikler = sonuc["degisiklikler"]
+                if self._sync_kesinti:
+                    self._sync_kesinti = False
+                    self.bildir("Eş zamanlı bağlantı yeniden kuruldu.")
+                if degisiklikler and self.page.views:
+                    if self.page.views[-1] is self.ana:
+                        son = degisiklikler[-1]
+                        self.bildir(f"{son.get('ad_soyad') or son.get('kullanici') or 'Başka bir kullanıcı'} "
+                                    f"({son.get('rol') or 'kullanıcı'}) güncelleme yaptı; ekran yenilendi.")
+                        await self.sekme_yenile()
+                    else:
+                        self.bildir("Başka kullanıcılar kayıtları güncelledi. Açık formu kapatıp yeniden açarak "
+                                    "güncel bilgileri yükleyin.")
+            except ApiHatasi as e:
+                if e.kod == 401:
+                    await self.giris_ekrani(str(e))
+                    return
+                if not self._sync_kesinti:
+                    self._sync_kesinti = True
+                    self.bildir("Eş zamanlı bağlantı kesildi; bağlantı sağlanınca yeniden denenecek.")
+            await asyncio.sleep(5)
 
     async def _sekme_degisti(self, e):
         self.sekme = e.control.selected_index
@@ -429,7 +493,7 @@ class Uygulama:
         self.page.update()
 
     def liste(self, kontroller: list) -> ft.ListView:
-        return ft.ListView(kontroller, padding=12, spacing=10, expand=True)
+        return ft.ListView(kontroller, padding=16, spacing=12, expand=True)
 
     def _yil_secici(self, degisti) -> ft.Dropdown:
         async def sec(e):
@@ -461,13 +525,34 @@ class Uygulama:
                        ("Stok değeri", para(o["stok"]) + " TL", ft.Icons.INVENTORY_2, ft.Colors.BROWN_600),
                        ("Ödenmemiş hazine payı", para(o["hazine_odenmemis"]) + " TL", ft.Icons.ACCOUNT_BALANCE,
                         ft.Colors.RED_700 if o["hazine_odenmemis"] else ft.Colors.GREY_700)]
-        kutular = [ft.Container(ft.Column([ft.Row([ft.Icon(ikon, color=renk, size=20), ft.Text(ad, size=12, color=ft.Colors.GREY_700,
-                                                                                               expand=True)]),
-                                           ft.Text(deger, size=17, weight=ft.FontWeight.BOLD, color=renk)], spacing=4),
-                                col={"xs": 6, "md": 3}, padding=12, border_radius=12, bgcolor=ft.Colors.GREY_50,
-                                border=ft.Border.all(1, ft.Colors.GREY_300))
+        kutular = [ft.Container(
+                       ft.Column([
+                           ft.Row([
+                               ft.Container(ft.Icon(ikon, color=renk, size=20), width=40, height=40,
+                                            alignment=ft.Alignment.CENTER, bgcolor=ft.Colors.GREY_100,
+                                            border_radius=12),
+                               ft.Text(ad, size=12, color=ft.Colors.BLUE_GREY_700, expand=True, max_lines=2),
+                           ], spacing=10),
+                           ft.Text(deger, size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_900),
+                       ], spacing=12),
+                       col={"xs": 6, "md": 3}, padding=14, border_radius=16, bgcolor=ft.Colors.WHITE,
+                       border=ft.Border.all(1, ft.Colors.GREY_200))
                    for ad, deger, ikon, renk in gostergeler]
-        kontroller = [ft.Row([self._yil_secici(self.sekme_yenile)]), ft.ResponsiveRow(kutular, spacing=8, run_spacing=8)]
+        kullanici = self.ben.get("kullanici") or {}
+        ad = kullanici.get("ad_soyad") or kullanici.get("kullanici_adi") or "Kullanıcı"
+        kontroller = [
+            ft.Container(
+                ft.Column([
+                    ft.Text(f"Merhaba, {ad.split()[0]}", size=22,
+                            weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                    ft.Text(f"{kullanici.get('rol') or 'Kullanıcı'}  •  {self.yil} çalışma özeti",
+                            size=13, color=ft.Colors.TEAL_50),
+                ], spacing=4),
+                padding=20, border_radius=18, bgcolor=ft.Colors.TEAL_800,
+            ),
+            ft.Row([self._yil_secici(self.sekme_yenile)]),
+            ft.ResponsiveRow(kutular, spacing=10, run_spacing=10),
+        ]
         if v["bekleyen_onay"]:
             async def onaya(e):
                 i = next(i for i, s in enumerate(self.sekmeler) if s[0] == "onay")
@@ -967,6 +1052,10 @@ class Uygulama:
         if self.modul("islem"):
             kontroller.append(oge(ft.Icons.MANAGE_SEARCH, "İşlem kaydı", "Kim, ne zaman, hangi cihazdan ne yaptı",
                                   lambda e: self.page.run_task(self.islem_kaydi_ekrani)))
+        if self.modul("denetim"):
+            kontroller.append(oge(ft.Icons.FACT_CHECK_OUTLINED, "Denetim formu",
+                                  "Rehber kontrol listesi, ortak çalışma ve rapor",
+                                  lambda e: self.page.run_task(self.denetim_listesi)))
         kk = self.ben.get("kurum_kodu") or ""
         kontroller += [oge(ft.Icons.PASSWORD, "Şifre değiştir", None, lambda e: self.sifre_ekrani()),
                        oge(ft.Icons.INFO_OUTLINE, "Hakkında", None, lambda e: self.bilgi(
@@ -978,6 +1067,206 @@ class Uygulama:
                            "bilgisiyle işlem kaydına yazılır.")),
                        oge(ft.Icons.LOGOUT, "Çıkış", None, self.cikis)]
         self.govde.content = self.liste(kontroller)
+
+    async def denetim_listesi(self):
+        sonuc = await self.cagir(self.api.get, "/denetimler")
+        if sonuc is None:
+            return
+        kontroller = [
+            mesaj_kutusu(["Rehber maddeleri görev alanlarına göre farklı rollerce doldurulur. "
+                          "Her madde için sonuç ve açıklama/kanıt kaydedilir; değişiklikler diğer kullanıcılara eşitlenir."],
+                         "bilgi")
+        ]
+        if self.modul("denetim") == "y":
+            kontroller.append(ft.FilledButton("Yeni denetim başlat", icon=ft.Icons.ADD,
+                                              on_click=lambda e: self.page.run_task(self.denetim_yeni_formu)))
+        for kayit in sonuc["denetimler"]:
+            async def ac(e, denetim_id=kayit["id"]):
+                await self.denetim_detay(denetim_id)
+            toplam = kayit["madde_sayisi"] or 0
+            tamam = kayit["degerlendirilen"] or 0
+            kontroller.append(ft.Card(content=ft.ListTile(
+                leading=ft.Icon(ft.Icons.FACT_CHECK_OUTLINED, color=ft.Colors.TEAL_700),
+                title=ft.Text(kayit["baslik"], weight=ft.FontWeight.BOLD),
+                subtitle=ft.Text(f"{kayit['durum']} • {tamam}/{toplam} madde değerlendirildi"
+                                 + (f"\nSon işlem: {kayit.get('guncelleyen') or '-'}" if kayit.get("guncelleme") else "")),
+                is_three_line=True, trailing=ft.Icon(ft.Icons.CHEVRON_RIGHT), on_click=ac)))
+        if not sonuc["denetimler"]:
+            kontroller.append(ft.Text("Henüz denetim formu oluşturulmadı."))
+        self.ac(self.gorunum("Denetim formları", kontroller))
+
+    async def denetim_yeni_formu(self):
+        baslik_alani = ft.TextField(label="Denetim başlığı", value=f"{date.today().year} Rehberlik ve Denetim Raporu")
+        il = ft.TextField(label="İl")
+        ilce = ft.TextField(label="İlçe")
+        okul = ft.TextField(label="Okul adı", value=self.ben.get("kurum") or "")
+        kod = ft.TextField(label="Kurum kodu", value=self.ben.get("kurum_kodu") or "")
+        baslangic = ft.TextField(label="Denetim başlangıç tarihi (GG.AA.YYYY)")
+        bitis = ft.TextField(label="Denetim bitiş tarihi (GG.AA.YYYY)")
+
+        async def kaydet(e):
+            baslik_metni = (baslik_alani.value or "").strip()
+            if not baslik_metni:
+                self.bilgi("Eksik bilgi", "Denetim başlığını giriniz.")
+                return
+            bilgiler = {
+                "il": (il.value or "").strip(), "ilce": (ilce.value or "").strip(),
+                "okul_adi": (okul.value or "").strip(), "kurum_kodu": (kod.value or "").strip(),
+                "denetim_baslangic": (baslangic.value or "").strip(), "denetim_bitis": (bitis.value or "").strip(),
+            }
+            sonuc = await self.cagir(self.api.post, "/denetimler", {"baslik": baslik_metni, "bilgiler": bilgiler})
+            if sonuc is None:
+                return
+            self.geri()
+            await self.denetim_detay(sonuc["id"])
+
+        self.ac(self.gorunum("Yeni denetim", [
+            mesaj_kutusu(["Formu okul yöneticisi başlatır. Kontrol maddelerini alanlarına göre yetkili kullanıcılar "
+                          "eş zamanlı doldurabilir."], "bilgi"),
+            baslik_alani, okul, il, ilce, kod, baslangic, bitis,
+            ft.FilledButton("Formu oluştur", icon=ft.Icons.SAVE, on_click=kaydet, height=48),
+        ]))
+
+    async def denetim_detay(self, denetim_id: int):
+        kayit = await self.cagir(self.api.get, f"/denetimler/{denetim_id}")
+        if kayit is None:
+            return
+        tum_maddeler = kayit["maddeler"]
+        degerlendirilen = sum(m["durum"] != "Değerlendirilmedi" for m in tum_maddeler)
+        gruplar = {}
+        for madde in tum_maddeler:
+            gruplar.setdefault((madde["bolum"], madde["baslik"]), []).append(madde)
+        secimler = [ft.DropdownOption(key=k[0], text=f"{k[0]} {k[1]}") for k in gruplar]
+        bolum = ft.Dropdown(label="Denetim alanı", value=secimler[0].key if secimler else None,
+                            options=secimler, expand=True)
+        govde = ft.Column(spacing=8)
+
+        def bolum_goster(e=None):
+            secili = bolum.value
+            for (kod, baslik_metni), maddeler in gruplar.items():
+                if kod != secili:
+                    continue
+                govde.controls = [baslik(f"{kod} {baslik_metni}")]
+                for madde in maddeler:
+                    sonuc = ft.Dropdown(
+                        label="Değerlendirme", value=madde["durum"], expand=True,
+                        options=[secenek(x, x) for x in ("Değerlendirilmedi", "Uygun", "Eksik", "Uygulanamaz")],
+                        disabled=not madde["yazabilir"],
+                    )
+                    aciklama = ft.TextField(label="Açıklama / kanıt", value=madde["aciklama"], multiline=True,
+                                            min_lines=1, max_lines=4, disabled=not madde["yazabilir"])
+
+                    async def kaydet(e, m=madde, durum=sonuc, not_=aciklama):
+                        y = await self.cagir(self.api.put,
+                                             f"/denetimler/{denetim_id}/maddeler/{m['kod']}",
+                                             {"surum": m["surum"], "durum": durum.value or "Değerlendirilmedi",
+                                              "aciklama": not_.value or ""})
+                        if y is None:
+                            return
+                        m["surum"] = y["surum"]
+                        m["durum"] = durum.value or "Değerlendirilmedi"
+                        m["aciklama"] = not_.value or ""
+                        self.bildir(f"{m['kod']} maddesi kaydedildi.")
+
+                    govde.controls.append(kart(
+                        ft.Text(f"{madde['kod']} — {madde['soru']}", weight=ft.FontWeight.W_500, selectable=True),
+                        sonuc, aciklama,
+                        *( [ft.FilledButton("Maddeyi kaydet", icon=ft.Icons.SAVE,
+                                           on_click=lambda e, fn=kaydet: self.page.run_task(fn, e))]
+                           if madde["yazabilir"] else [ft.Text("Bu madde için yalnız görüntüleme yetkiniz var.",
+                                                               size=12, color=ft.Colors.GREY_700)])))
+            self.page.update()
+
+        bolum.on_select = bolum_goster
+        bolum_goster()
+
+        kontroller = [
+            kart(ft.Text(kayit["baslik"], size=18, weight=ft.FontWeight.BOLD),
+                 satir("Durum", kayit["durum"]), satir("İlerleme", f"{degerlendirilen}/{len(tum_maddeler)} madde"),
+                 satir("Son güncelleyen", kayit.get("guncelleyen") or kayit.get("olusturan"))),
+            ft.Row([ft.OutlinedButton("Rapor bilgileri", icon=ft.Icons.EDIT,
+                                      on_click=lambda e: self.page.run_task(self.denetim_bilgi_formu, kayit))
+                    ] if kayit["bilgi_yazabilir"] else []),
+            bolum,
+            govde,
+            *( [ft.OutlinedButton("PDF raporu oluştur", icon=ft.Icons.PICTURE_AS_PDF,
+                                  on_click=lambda e: self.page.run_task(self.denetim_pdf, denetim_id))]
+               if kayit["rapor_goruntuleyebilir"] else []),
+        ]
+        self.ac(self.gorunum(f"Denetim #{denetim_id}", kontroller))
+
+    async def denetim_bilgi_formu(self, kayit: dict):
+        alan_etiketleri = {
+            "il": "İl", "ilce": "İlçe", "okul_adi": "Okul adı", "kurum_kodu": "Kurum kodu",
+            "telefon_faks": "Telefon / faks", "alan_dallar": "Öğretim yapılan alan ve dallar",
+            "isletme_acilis_tarihi": "İşletmenin açılış tarihi", "faaliyet_alani": "Faaliyet alanı",
+            "makine_techizat": "Kullanılan makine ve teçhizat", "son_denetim_tarihi": "Son denetim tarihi",
+            "denetim_baslangic": "Denetim başlangıç tarihi", "denetim_bitis": "Denetim bitiş tarihi",
+            "yonetici_kadin": "Yönetici sayısı — kadın", "yonetici_erkek": "Yönetici sayısı — erkek",
+            "sef_kadin": "Alan/atölye şefi sayısı — kadın", "sef_erkek": "Alan/atölye şefi sayısı — erkek",
+            "ogretmen_kadin": "Öğretmen sayısı — kadın", "ogretmen_erkek": "Öğretmen sayısı — erkek",
+            "diger_personel_kadin": "Diğer personel sayısı — kadın",
+            "diger_personel_erkek": "Diğer personel sayısı — erkek",
+            "ogrenci_kadin": "Öğrenci sayısı — kadın", "ogrenci_erkek": "Öğrenci sayısı — erkek",
+            "giris": "1. Giriş", "hizmet_ortami_bulgulari": "2. Hizmet ortamları — bulgular",
+            "hizmet_ortami_onerileri": "2. Hizmet ortamları — çözüm önerileri",
+            "egitim_bulgulari": "3. Eğitim-öğretim faaliyetleri — bulgular",
+            "egitim_onerileri": "3. Eğitim-öğretim faaliyetleri — çözüm önerileri",
+            "yonetim_bulgulari": "4. Yönetim faaliyetleri — bulgular",
+            "yonetim_onerileri": "4. Yönetim faaliyetleri — çözüm önerileri",
+            "mali_bulgular": "5. Mali iş ve işlemler — bulgular",
+            "mali_oneriler": "5. Mali iş ve işlemler — çözüm önerileri",
+            "il_mudurlugune_oneriler": "İl/ilçe millî eğitim müdürlüğüne öneriler",
+            "sonuc_ve_genel_oneriler": "7. Sonuç ve genel öneriler",
+            "yonetici_bilgileri": "Değerlendirilen yöneticiler",
+        }
+        alanlar = {}
+        for anahtar, etiket in alan_etiketleri.items():
+            cok_satir = anahtar in {
+                "makine_techizat", "faaliyet_alani", "giris", "hizmet_ortami_bulgulari",
+                "hizmet_ortami_onerileri", "egitim_bulgulari", "egitim_onerileri",
+                "yonetim_bulgulari", "yonetim_onerileri", "mali_bulgular", "mali_oneriler",
+                "il_mudurlugune_oneriler", "sonuc_ve_genel_oneriler", "yonetici_bilgileri",
+            }
+            alanlar[anahtar] = ft.TextField(label=etiket, value=kayit["bilgiler"].get(anahtar) or "",
+                                            multiline=cok_satir, min_lines=2 if cok_satir else 1,
+                                            max_lines=6 if cok_satir else 1)
+        baslik_alani = ft.TextField(label="Rapor başlığı", value=kayit["baslik"])
+        durum = ft.Dropdown(label="Rapor durumu", value=kayit["durum"],
+                            options=[secenek(x, x) for x in ("Taslak", "Tamamlandı")])
+
+        async def kaydet(e):
+            veri = {"surum": kayit["surum"], "baslik": baslik_alani.value or "",
+                    "durum": durum.value or "Taslak",
+                    "bilgiler": {k: v.value or "" for k, v in alanlar.items()}}
+            sonuc = await self.cagir(self.api.put, f"/denetimler/{kayit['id']}", veri)
+            if sonuc is None:
+                return
+            self.geri()
+            await self.denetim_detay(kayit["id"])
+
+        self.ac(self.gorunum("Rapor bilgileri", [
+            mesaj_kutusu(["Formu yalnızca okul yöneticileri güncelleyebilir. Tamamlandı durumu için tüm kontrol "
+                          "maddeleri değerlendirilmiş olmalıdır."], "bilgi"),
+            baslik_alani, *alanlar.values(), durum,
+            ft.FilledButton("Rapor bilgilerini kaydet", icon=ft.Icons.SAVE, on_click=kaydet, height=48),
+        ]))
+
+    async def denetim_pdf(self, denetim_id: int):
+        sonuc = await self.cagir(self.api.get, f"/denetimler/{denetim_id}/rapor")
+        if sonuc is None:
+            return
+        picker = ft.FilePicker()
+        self.page.overlay.append(picker)
+        self.page.update()
+        try:
+            yol = await picker.save_file(dialog_title="Denetim raporunu kaydet",
+                                         file_name=sonuc["dosya_adi"], src_bytes=base64.b64decode(sonuc["icerik"]))
+            if yol:
+                self.bildir(f"PDF raporu kaydedildi: {yol}")
+        finally:
+            self.page.overlay.remove(picker)
+            self.page.update()
 
     async def stok_ekrani(self):
         v = await self.cagir(self.api.get, "/stok")

@@ -7,7 +7,9 @@ kaydına kullanıcı, rol, cihaz ve "Mobil" kaynak bilgisiyle yazılır.
 from __future__ import annotations
 
 import calendar
+import base64
 import hashlib
+import json
 import secrets
 import threading
 import time
@@ -23,6 +25,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from dose import SURUM
 from dose import ag, db as dbm
+from dose import denetim_formu
 from dose import gosterge, izleme, kilavuz, lisans, muhasebe, onay, uyum, yetki
 from dose import mevzuat as M
 from dose.db import KayitCakismasi
@@ -51,6 +54,7 @@ MOBIL_MODULLER = {
     "satis": "Satış Faturaları",
     "alis": "Alış / Gider Belgeleri",
     "islem": "Yedekleme / İşlem Kaydı",
+    "denetim": "Rehberlik ve Denetim Formu",
 }
 FATURA_SAYFASI = {"Satış": "Satış Faturaları", "Alış": "Alış / Gider Belgeleri"}
 GUNLER = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
@@ -119,6 +123,24 @@ class FazlaIstegi(BaseModel):
     surum: int | None = None
 
 
+class DenetimOlusturIstegi(BaseModel):
+    baslik: str = Field(min_length=1, max_length=160)
+    bilgiler: dict[str, str] = Field(default_factory=dict)
+
+
+class DenetimGuncelleIstegi(BaseModel):
+    surum: int = Field(ge=1)
+    baslik: str = Field(min_length=1, max_length=160)
+    durum: str
+    bilgiler: dict[str, str] = Field(default_factory=dict)
+
+
+class DenetimMaddeIstegi(BaseModel):
+    surum: int = Field(ge=1)
+    durum: str
+    aciklama: str = Field(default="", max_length=5000)
+
+
 # ---------------------------------------------------------------- oturum ve yetki
 def _ozet(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -143,24 +165,42 @@ class Baglam:
         self.oturum = "m" + token_ozet[:15]
         self.cihaz = cihaz or "Mobil cihaz"
         self.kurum_kodu = kurum_kodu_normalize(kurum_kodu) if kurum_kodu else None
-        self._kilit = _HAVUZ.kilit(self.kurum_kodu) if (_HAVUZ and self.kurum_kodu) else KILIT
+        if _HAVUZ and self.kurum_kodu:
+            self._kilit = _HAVUZ.kilit(self.kurum_kodu)
+        else:
+            self._kilit = None if dbm.al().sunucu_mu else KILIT
+        self._istek_db = False
+        self._veritabani = None
 
     def __enter__(self):
-        self._kilit.acquire()
+        if self._kilit:
+            self._kilit.acquire()
         try:
-            d = _HAVUZ.al(self.kurum_kodu) if (_HAVUZ and self.kurum_kodu) else dbm.al()
+            if _HAVUZ and self.kurum_kodu:
+                d = _HAVUZ.al(self.kurum_kodu)
+            else:
+                kaynak = dbm.al()
+                d = dbm.istek_baglantisi(kaynak)
+                self._istek_db = d is not kaynak
+            self._veritabani = d
             dbm.baglam_ayarla(d)
             _lisans_tazele(d)
             d.oturum_ac(self.k, istemci="Mobil", bilgisayar=self.cihaz, oturum=self.oturum)
             return d
         except BaseException:
             dbm.baglam_ayarla(None)
-            self._kilit.release()
+            if self._istek_db and self._veritabani:
+                self._veritabani.kapat()
+            if self._kilit:
+                self._kilit.release()
             raise
 
     def __exit__(self, *_):
         dbm.baglam_ayarla(None)
-        self._kilit.release()
+        if self._istek_db and self._veritabani:
+            self._veritabani.kapat()
+        if self._kilit:
+            self._kilit.release()
 
 
 def _kurum_dogrula(d, istenen: str):
@@ -504,6 +544,172 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
                     "moduller": {m: etkin_yetki(k, s) for m, s in MOBIL_MODULLER.items()},
                     "bekleyen_onay": onay.bekleyen_sayisi(k), "onay_akisi": onay.akis_acik(),
                     "lisans": lisans.durum(d).ozet, "salt_okunur": d.salt_okunur, "yil": date.today().year}
+
+    # ------------------------------------------------------------ rehberlik ve denetim formu
+    def _denetim(d, denetim_id: int) -> dict:
+        kayit = d.q1("SELECT * FROM denetim WHERE id = ?", (denetim_id,))
+        if not kayit:
+            raise HTTPException(404, "Denetim formu bulunamadı.")
+        try:
+            bilgiler = json.loads(kayit.get("bilgiler") or "{}")
+        except (TypeError, ValueError):
+            raise HTTPException(500, "Denetim formunun bilgileri okunamadı.") from None
+        if not isinstance(bilgiler, dict):
+            raise HTTPException(500, "Denetim formunun bilgileri beklenen biçimde değil.")
+        kayit["bilgiler"] = bilgiler
+        return kayit
+
+    def _denetim_maddeleri(d, denetim_id: int, rol: str) -> list[dict]:
+        cevaplar = {x["madde_kodu"]: x for x in d.q(
+            "SELECT * FROM denetim_madde WHERE denetim_id = ?", (denetim_id,))}
+        sonuc = []
+        for madde in denetim_formu.MADDELER:
+            tumunu_gorur = rol in (M.ROL_SISTEM, M.ROL_MUDUR, M.ROL_TMY, M.ROL_IZLEYICI)
+            rol_yetkili = rol == M.ROL_SISTEM or rol in denetim_formu.BOLUM_YETKILERI[madde["bolum"]]
+            if not tumunu_gorur and not rol_yetkili:
+                continue
+            cevap = cevaplar.get(madde["kod"], {})
+            sonuc.append({**madde, "durum": cevap.get("durum") or "Değerlendirilmedi",
+                          "aciklama": cevap.get("aciklama") or "", "surum": cevap.get("surum") or 1,
+                          "guncelleme": cevap.get("guncelleme"), "guncelleyen": cevap.get("guncelleyen"),
+                          "yazabilir": rol_yetkili})
+        return sonuc
+
+    @app.get("/api/denetimler")
+    def denetimler(b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["denetim"])
+            return {"denetimler": d.q(
+                """SELECT d.id, d.baslik, d.durum, d.surum, d.guncelleme, d.guncelleyen,
+                          COUNT(m.id) madde_sayisi,
+                          SUM(CASE WHEN m.durum != 'Değerlendirilmedi' THEN 1 ELSE 0 END) degerlendirilen
+                   FROM denetim d LEFT JOIN denetim_madde m ON m.denetim_id = d.id
+                   GROUP BY d.id ORDER BY d.id DESC LIMIT 100""")}
+
+    @app.post("/api/denetimler")
+    def denetim_olustur(istek: DenetimOlusturIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["denetim"], yaz=True)
+            if b.k["rol"] not in (M.ROL_SISTEM, M.ROL_MUDUR, M.ROL_TMY):
+                raise HTTPException(403, "Yeni denetim formunu yalnızca okul yöneticileri başlatabilir.")
+            bilgiler = {k: v.strip() for k, v in istek.bilgiler.items() if k in denetim_formu.BILGI_ALANLARI}
+            simdi = _simdi()
+            with d.islem():
+                denetim_id = d.ekle("denetim", {"baslik": istek.baslik.strip(), "durum": "Taslak",
+                                                 "bilgiler": json.dumps(bilgiler, ensure_ascii=False),
+                                                 "surum": 1, "olusturma": simdi, "guncelleme": simdi,
+                                                 "olusturan": b.k["kullanici_adi"], "guncelleyen": b.k["kullanici_adi"]})
+                d.m.coklu("INSERT INTO denetim_madde (denetim_id, madde_kodu, durum, aciklama, surum) "
+                          "VALUES (?, ?, ?, ?, ?)",
+                          [(denetim_id, x["kod"], "Değerlendirilmedi", "", 1) for x in denetim_formu.MADDELER])
+                d.log("Denetim formu oluşturma", "denetim", denetim_id, yeni={"baslik": istek.baslik.strip()})
+            return {"id": denetim_id}
+
+    @app.get("/api/denetimler/{denetim_id}")
+    def denetim_detay(denetim_id: int, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["denetim"])
+            kayit = _denetim(d, denetim_id)
+            if b.k["rol"] in (M.ROL_SEF, M.ROL_OGRETMEN, M.ROL_MEMUR):
+                gorulebilir = {"il", "ilce", "okul_adi", "kurum_kodu", "faaliyet_alani",
+                               "denetim_baslangic", "denetim_bitis"}
+                kayit["bilgiler"] = {k: v for k, v in kayit["bilgiler"].items() if k in gorulebilir}
+            maddeler = _denetim_maddeleri(d, denetim_id, b.k["rol"])
+            kayit["maddeler"] = maddeler
+            kayit["bilgi_yazabilir"] = b.k["rol"] in (M.ROL_SISTEM, M.ROL_MUDUR, M.ROL_TMY)
+            kayit["rapor_goruntuleyebilir"] = b.k["rol"] in (
+                M.ROL_SISTEM, M.ROL_MUDUR, M.ROL_TMY, M.ROL_IZLEYICI)
+            return kayit
+
+    @app.put("/api/denetimler/{denetim_id}")
+    def denetim_guncelle(denetim_id: int, istek: DenetimGuncelleIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["denetim"], yaz=True)
+            if b.k["rol"] not in (M.ROL_SISTEM, M.ROL_MUDUR, M.ROL_TMY):
+                raise HTTPException(403, "Denetim rapor bilgilerini güncelleme yetkiniz yok.")
+            mevcut = _denetim(d, denetim_id)
+            if istek.durum not in ("Taslak", "Tamamlandı"):
+                raise HTTPException(400, "Denetim durumu Taslak veya Tamamlandı olmalıdır.")
+            if istek.durum == "Tamamlandı" and d.deger(
+                    "SELECT COUNT(*) FROM denetim_madde WHERE denetim_id = ? AND durum = 'Değerlendirilmedi'",
+                    (denetim_id,), 0):
+                raise HTTPException(400, "Tamamlamadan önce tüm kontrol maddelerini değerlendirin.")
+            bilgiler = dict(mevcut["bilgiler"])
+            bilgiler.update({k: v.strip() for k, v in istek.bilgiler.items()
+                             if k in denetim_formu.BILGI_ALANLARI})
+            if istek.durum == "Tamamlandı":
+                bos_alanlar = [alan for alan in denetim_formu.ZORUNLU_RAPOR_ALANLARI
+                               if not (bilgiler.get(alan) or "").strip()]
+                if bos_alanlar:
+                    eksikler = ", ".join(alan.replace("_", " ") for alan in bos_alanlar)
+                    raise HTTPException(400, "Tamamlamadan önce rapordaki tüm alanları doldurun; uygulanamayan "
+                                             f"alanlara 'Yok' veya 'Uygulanamaz' yazın. Eksik alanlar: {eksikler}.")
+            with d.islem():
+                cur = d.ex("""UPDATE denetim SET baslik = ?, durum = ?, bilgiler = ?, surum = surum + 1,
+                              guncelleme = ?, guncelleyen = ? WHERE id = ? AND surum = ?""",
+                            (istek.baslik.strip(), istek.durum, json.dumps(bilgiler, ensure_ascii=False),
+                             _simdi(), b.k["kullanici_adi"], denetim_id, istek.surum))
+                if cur.rowcount != 1:
+                    raise HTTPException(409, "Form siz düzenlerken başka bir kullanıcı tarafından güncellendi. "
+                                             "Güncel formu yeniden açıp tekrar deneyin.")
+                d.log("Güncelleme", "denetim", denetim_id, yeni={"baslik": istek.baslik.strip(),
+                                                                 "durum": istek.durum})
+            return {"tamam": True, "surum": istek.surum + 1}
+
+    @app.put("/api/denetimler/{denetim_id}/maddeler/{madde_kodu}")
+    def denetim_madde_guncelle(denetim_id: int, madde_kodu: str, istek: DenetimMaddeIstegi,
+                               b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["denetim"], yaz=True)
+            _denetim(d, denetim_id)
+            madde = next((x for x in denetim_formu.MADDELER if x["kod"] == madde_kodu), None)
+            if not madde:
+                raise HTTPException(404, "Denetim kontrol maddesi bulunamadı.")
+            if b.k["rol"] != M.ROL_SISTEM and b.k["rol"] not in denetim_formu.BOLUM_YETKILERI[madde["bolum"]]:
+                raise HTTPException(403, "Bu kontrol maddesini güncelleme yetkiniz yok.")
+            if istek.durum not in ("Değerlendirilmedi", "Uygun", "Eksik", "Uygulanamaz"):
+                raise HTTPException(400, "Sonuç Uygun, Eksik, Uygulanamaz veya Değerlendirilmedi olmalıdır.")
+            if istek.durum == "Eksik" and not istek.aciklama.strip():
+                raise HTTPException(400, "Eksik sonucu için bulgu ve kanıt açıklaması giriniz.")
+            kayit = d.q1("SELECT id, surum FROM denetim_madde WHERE denetim_id = ? AND madde_kodu = ?",
+                         (denetim_id, madde_kodu))
+            if not kayit:
+                raise HTTPException(404, "Kontrol maddesi bu formda bulunamadı.")
+            with d.islem():
+                cur = d.ex("""UPDATE denetim_madde SET durum = ?, aciklama = ?, surum = surum + 1,
+                              guncelleme = ?, guncelleyen = ? WHERE id = ? AND surum = ?""",
+                            (istek.durum, istek.aciklama.strip(), _simdi(), b.k["kullanici_adi"],
+                             kayit["id"], istek.surum))
+                if cur.rowcount != 1:
+                    raise HTTPException(409, "Bu maddeyi başka bir kullanıcı güncelledi. Güncel sonucu yeniden açın.")
+                d.log("Güncelleme", "denetim_madde", kayit["id"], yeni={"denetim_id": denetim_id,
+                                                                         "madde_kodu": madde_kodu,
+                                                                         "durum": istek.durum})
+            return {"tamam": True, "surum": istek.surum + 1}
+
+    @app.get("/api/denetimler/{denetim_id}/rapor")
+    def denetim_raporu(denetim_id: int, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["denetim"])
+            if b.k["rol"] not in (M.ROL_SISTEM, M.ROL_MUDUR, M.ROL_TMY, M.ROL_IZLEYICI):
+                raise HTTPException(403, "Denetim PDF raporunu görüntüleme yetkiniz yok.")
+            kayit = _denetim(d, denetim_id)
+            maddeler = _denetim_maddeleri(d, denetim_id, b.k["rol"])
+            data = denetim_formu.rapor_pdf(d.kurum(), kayit, maddeler)
+            d.log("PDF raporu", "denetim", denetim_id)
+            return {"dosya_adi": f"denetim_raporu_{denetim_id}.pdf",
+                    "icerik": base64.b64encode(data).decode("ascii")}
+
+    @app.get("/api/senkron")
+    def senkron(son_no: int = Query(0, ge=0), b: Baglam = Depends(kullanici)):
+        """Başka oturumlardaki kayıtları hafif bir değişiklik akışıyla Flet istemcilerine bildirir."""
+        with b as d:
+            degisiklikler = d.degisiklikler(son_no, sinir=100)
+            if etkin_yetki(b.k, MOBIL_MODULLER["islem"]):
+                gorunen = degisiklikler
+            else:
+                gorunen = [{"id": x["id"]} for x in degisiklikler]
+            return {"degisiklikler": gorunen, "son_no": d.son_islem_no()}
 
     # ------------------------------------------------------------ gösterge paneli
     @app.get("/api/panel")

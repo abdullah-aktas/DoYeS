@@ -9,7 +9,8 @@ Mesleki ve Teknik Anadolu Liseleri **Döner Sermaye İşletmesi** için masaüst
 - Sipariş / iş emri, onay akışı, fatura, kasa-banka, stok  
 - Fazla çalışma ve parça başı, yıl sonu ÜTP, hazine payı / KDV özetleri  
 - Muhasebe (yevmiye/mizan), raporlar, resmi yazılar  
-- **Mobil:** onay, iş talebi, fazla çalışma, özet listeler (kurum kodu ile)
+- **Mobil:** onay, iş talebi, fazla çalışma, denetim kontrol listesi ve özetler (kurum kodu ile)
+- **Eş zamanlı çalışma:** rol ve bölüm yetkileri, işlem günlüğü, çakışma koruması ve otomatik ekran eşitleme
 
 ## Hızlı başlangıç (geliştirme)
 
@@ -24,6 +25,13 @@ python main.py
 Kurulum paketini üretmek: `exe_olustur.bat` → `kurulum_paketi\DOSE_Yonetim_Kurulum_<sürüm>.exe`
 
 Ayrıntılı kurulum: [`KURULUM.md`](KURULUM.md) · Teknik servis / programcı: [`TEKNIK_SERVIS_KILAVUZU.md`](TEKNIK_SERVIS_KILAVUZU.md) · Satış / barındırma: [`SATIS_REHBERI.md`](SATIS_REHBERI.md)
+
+## Supabase / merkezi PostgreSQL
+
+Supabase şema geçişleri `supabase/migrations/` altında tutulur. Mobil/masaüstü istemciler Supabase'e doğrudan değil,
+kimlik doğrulama ve mevcut rol denetimlerini uygulayan FastAPI sunucusuna bağlanır. Sunucuya yalnızca
+`DOSE_DATABASE_URL` verilir; veritabanı parolası veya Supabase `service_role` anahtarı istemciye eklenmez.
+Kurulum ve KVKK/veri bölgesi uyarıları için [`KURULUM.md`](KURULUM.md) içindeki Supabase bölümüne bakın.
 
 ## Geçit adresi zorunlu mu?
 

@@ -14,6 +14,7 @@ SAYFA_YETKI = {
     "Bugün Ne Yapmalıyım?":       "gggggggg",
     "Nasıl Yaparım? (Adım Adım)": "gggggggg",
     "Mevzuat Uyum Denetimi":      "gggggggg",
+    "Rehberlik ve Denetim Formu": "yyyyyyyg",
     "Gösterge Paneli":            "gggggggg",
     "Onay Bekleyenler":           "yyyyyyyg",
     "Mevzuat Rehberi":            "gggggggg",

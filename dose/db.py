@@ -201,6 +201,18 @@ CREATE TABLE IF NOT EXISTS resmi_yazi (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tarih TEXT, sayi TEXT, konu TEXT, muhatap TEXT, ilgi TEXT, metin TEXT, imza1 TEXT, imza2 TEXT
 );
+CREATE TABLE IF NOT EXISTS denetim (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    baslik TEXT NOT NULL, durum TEXT DEFAULT 'Taslak', bilgiler TEXT,
+    surum INTEGER DEFAULT 1, olusturma TEXT, guncelleme TEXT,
+    olusturan TEXT, guncelleyen TEXT
+);
+CREATE TABLE IF NOT EXISTS denetim_madde (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    denetim_id INTEGER NOT NULL, madde_kodu TEXT NOT NULL,
+    durum TEXT DEFAULT 'Değerlendirilmedi', aciklama TEXT, surum INTEGER DEFAULT 1,
+    guncelleme TEXT, guncelleyen TEXT, UNIQUE (denetim_id, madde_kodu)
+);
 CREATE TABLE IF NOT EXISTS onay_durum (
     belge_turu TEXT NOT NULL, belge_id INTEGER NOT NULL, asama INTEGER DEFAULT 0, durum TEXT DEFAULT 'Hazırlanıyor',
     bolum_id INTEGER, hazirlayan TEXT, guncelleme TEXT,
@@ -217,6 +229,7 @@ CREATE INDEX IF NOT EXISTS ix_kasa_tarih ON kasa_banka(tarih);
 CREATE INDEX IF NOT EXISTS ix_yev_kaynak ON yevmiye(kaynak, kaynak_id);
 CREATE INDEX IF NOT EXISTS ix_stok_malzeme ON stok_hareket(malzeme_id);
 CREATE INDEX IF NOT EXISTS ix_islem_log_kayit ON islem_log(tablo, kayit_id);
+CREATE INDEX IF NOT EXISTS ix_denetim_madde_denetim ON denetim_madde(denetim_id);
 """
 
 GOCLER = [
@@ -241,6 +254,17 @@ GOCLER = [
     ("siparis", "proforma_no", "TEXT"),
     ("siparis", "proforma_tarih", "TEXT"),
     ("siparis", "proforma_gecerlilik_gun", "INTEGER DEFAULT 30"),
+    ("denetim", "bilgiler", "TEXT"),
+    ("denetim", "surum", "INTEGER DEFAULT 1"),
+    ("denetim", "olusturma", "TEXT"),
+    ("denetim", "guncelleme", "TEXT"),
+    ("denetim", "olusturan", "TEXT"),
+    ("denetim", "guncelleyen", "TEXT"),
+    ("denetim_madde", "durum", "TEXT DEFAULT 'Değerlendirilmedi'"),
+    ("denetim_madde", "aciklama", "TEXT"),
+    ("denetim_madde", "surum", "INTEGER DEFAULT 1"),
+    ("denetim_madde", "guncelleme", "TEXT"),
+    ("denetim_madde", "guncelleyen", "TEXT"),
     ("islem_log", "rol", "TEXT"),
     ("islem_log", "ad_soyad", "TEXT"),
     ("islem_log", "bilgisayar", "TEXT"),
@@ -898,6 +922,26 @@ def baslat(kaynak=None) -> Veritabani:
             pass
     db = yeni
     return db
+
+
+def istek_baglantisi(veritabani: Veritabani) -> Veritabani:
+    """PostgreSQL API isteği için bağımsız bağlantı açar; yerel SQLite davranışını değiştirmez."""
+    if not veritabani.sunucu_mu:
+        return veritabani
+    yeni = object.__new__(Veritabani)
+    yeni.kaynak = veritabani.kaynak
+    yeni.kullanici = "sistem"
+    yeni.rol = ""
+    yeni.ad_soyad = ""
+    yeni.istemci = "Mobil"
+    yeni.bilgisayar = socket.gethostname()
+    yeni.oturum = uuid.uuid4().hex[:16]
+    yeni._acik_kayitlar = {}
+    yeni._derinlik = 0
+    yeni._salt_okunur = veritabani.salt_okunur
+    yeni.m = PostgresMotor(yeni.kaynak)
+    yeni.m.salt_okunur = yeni._salt_okunur
+    return yeni
 
 
 def baglam_ayarla(veritabani: Veritabani | None):

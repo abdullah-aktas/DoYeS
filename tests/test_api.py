@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dose import db as dbm  # noqa: E402
+from dose import denetim_formu  # noqa: E402
 from dose import mevzuat as M  # noqa: E402
 from dose import onay  # noqa: E402
 from dose.db import Veritabani, sifre_hashle  # noqa: E402
@@ -223,6 +224,68 @@ class MobilApi(unittest.TestCase):
             self.assertEqual(self.c.get(f"/api/fazla-calisma?yil={YIL}&ay=5", headers=ogr).status_code, 200)
         finally:
             self.db.salt_okunur = False
+
+    def test_denetim_formu_rol_paylasimi_cakisma_rapor_ve_senkron(self):
+        mudur, tmy, ogretmen, sayman = (self.giris("ali"), self.giris("veli"), self.giris("deniz"),
+                                       self.giris("ayse"))
+        olustur = self.c.post("/api/denetimler", headers=mudur,
+                              json={"baslik": "2026 Denetimi", "bilgiler": {"okul_adi": "Derik MTAL"}})
+        self.assertEqual(olustur.status_code, 200, olustur.text)
+        denetim_id = olustur.json()["id"]
+        detay = self.c.get(f"/api/denetimler/{denetim_id}", headers=ogretmen).json()
+        self.assertEqual(len(detay["maddeler"]), 17)
+        self.assertEqual(detay["maddeler"][0]["durum"], "Değerlendirilmedi")
+
+        ogretmen_madde = self.c.put(f"/api/denetimler/{denetim_id}/maddeler/3.1.01", headers=ogretmen,
+                                    json={"surum": 1, "durum": "Uygun", "aciklama": "Uygulama kayıtları incelendi."})
+        self.assertEqual(ogretmen_madde.status_code, 200, ogretmen_madde.text)
+        self.assertEqual(ogretmen_madde.json()["surum"], 2)
+        eksik_aciklama = self.c.put(f"/api/denetimler/{denetim_id}/maddeler/3.1.02", headers=ogretmen,
+                                    json={"surum": 1, "durum": "Eksik"})
+        self.assertEqual(eksik_aciklama.status_code, 400)
+        self.assertEqual(self.c.put(f"/api/denetimler/{denetim_id}/maddeler/5.1.01", headers=ogretmen,
+                                    json={"surum": 1, "durum": "Eksik"}).status_code, 403)
+        self.assertEqual(self.c.post("/api/denetimler", headers=ogretmen,
+                                     json={"baslik": "Yetkisiz"}).status_code, 403)
+
+        mali_madde = self.c.put(f"/api/denetimler/{denetim_id}/maddeler/5.1.01", headers=sayman,
+                                json={"surum": 1, "durum": "Eksik", "aciklama": "Mutabakat belgesi eksik."})
+        self.assertEqual(mali_madde.status_code, 200, mali_madde.text)
+        self.assertEqual(self.c.put(f"/api/denetimler/{denetim_id}/maddeler/3.1.01", headers=tmy,
+                                    json={"surum": 1, "durum": "Eksik", "aciklama": "Eksik kayıt."}).status_code, 409)
+
+        onceki_islem = self.db.son_islem_no()
+        rapor_bilgisi = {"surum": 1, "baslik": "2026 Denetimi", "durum": "Taslak",
+                         "bilgiler": {"okul_adi": "Derik MTAL", "giris": "Genel inceleme."}}
+        self.assertEqual(self.c.put(f"/api/denetimler/{denetim_id}", headers=mudur, json=rapor_bilgisi).status_code, 200)
+        cakisan = self.c.put(f"/api/denetimler/{denetim_id}", headers=tmy, json=rapor_bilgisi)
+        self.assertEqual(cakisan.status_code, 409)
+
+        ogrenci_senkron = self.c.get(f"/api/senkron?son_no={onceki_islem}", headers=ogretmen).json()
+        self.assertNotIn("rol", ogrenci_senkron["degisiklikler"][0])
+        degisiklik = self.c.get(f"/api/senkron?son_no={onceki_islem}", headers=sayman).json()
+        self.assertTrue(any(x["tablo"] in ("denetim", "denetim_madde") for x in degisiklik["degisiklikler"]))
+        self.assertEqual(self.c.get(f"/api/denetimler/{denetim_id}/rapor", headers=ogretmen).status_code, 403)
+        rapor = self.c.get(f"/api/denetimler/{denetim_id}/rapor", headers=mudur)
+        self.assertEqual(rapor.status_code, 200, rapor.text)
+        import base64
+        self.assertTrue(base64.b64decode(rapor.json()["icerik"]).startswith(b"%PDF"))
+
+        tamamlanmamis = dict(rapor_bilgisi, surum=2, durum="Tamamlandı")
+        sonuc = self.c.put(f"/api/denetimler/{denetim_id}", headers=mudur, json=tamamlanmamis)
+        self.assertEqual(sonuc.status_code, 400)
+        self.db.ex("UPDATE denetim_madde SET durum = 'Uygulanamaz' WHERE denetim_id = ?", (denetim_id,))
+        eksik_rapor = self.c.put(f"/api/denetimler/{denetim_id}", headers=mudur, json=tamamlanmamis)
+        self.assertEqual(eksik_rapor.status_code, 400, eksik_rapor.text)
+        self.assertIn("Eksik alanlar", eksik_rapor.text)
+        tamam_bilgileri = {
+            alan: "0" if alan.endswith(("_kadin", "_erkek")) else "Yok"
+            for alan in denetim_formu.BILGI_ALANLARI
+        }
+        tamam = self.c.put(f"/api/denetimler/{denetim_id}", headers=mudur,
+                           json={**tamamlanmamis, "bilgiler": tamam_bilgileri})
+        self.assertEqual(tamam.status_code, 200, tamam.text)
+        self.assertEqual(self.c.get(f"/api/denetimler/{denetim_id}", headers=mudur).json()["durum"], "Tamamlandı")
 
 
 if __name__ == "__main__":

@@ -101,6 +101,42 @@ sudo -u postgres crontab -e
 
 Programdaki **Yedekleme → Şimdi yedekle** düğmesi de sunucudaki verinin tam kopyasını bilgisayara indirir.
 
+#### Supabase ile PostgreSQL (yeni kurulum)
+
+Supabase, DÖSE uygulamasının kullandığı PostgreSQL veritabanını barındırabilir. Bu depo veritabanı şemasını
+`supabase/migrations/` altında sağlar; mobil ve masaüstü istemciler Supabase'e doğrudan bağlanmaz, mevcut FastAPI
+sunucusu üzerinden oturum ve rol denetiminden geçer.
+
+1. Supabase projesini kurumunuzun bilgi güvenliği ve veri yerleşimi kurallarına uygun bir bölgede oluşturun.
+   Personel/öğrenci kimlik, IBAN ve ücret verilerini yüklemeden önce okul/İl MEM veri sorumlusundan onay alın.
+   Supabase'in seçtiğiniz bölgesinin Türkiye'de olduğunu doğrulayamıyorsanız gerçek kişisel veri kullanmayın.
+2. Geliştirme bilgisayarında Supabase CLI ile projeyi bağlayıp ilk şemayı uygulayın:
+
+   ```powershell
+   supabase login
+   supabase link --project-ref <PROJECT_REF>
+   supabase db push
+   ```
+
+3. Mobil API'yi çalıştıran sunucuda `DOSE_DATABASE_URL` ortam değişkenini Supabase PostgreSQL bağlantı adresine
+   ayarlayın. Örnek (gerçek parolayı kaynak koda, istemciye veya sohbete koymayın):
+
+   ```powershell
+   $env:DOSE_DATABASE_URL = "postgresql://postgres:<DB_PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres?sslmode=require"
+   python sunucu_main.py
+   ```
+
+   Supabase bağlantı havuzu kullanılıyorsa proje panelindeki bağlantı adresi, kullanıcı ve portu aynen kullanın.
+   Paroladaki URL özel karakterleri yüzde-kodlu olmalıdır. `DOSE_DATABASE_URL` yalnızca sunucu sürecinde tanımlanır;
+   `service_role` anahtarı, veritabanı parolası veya bağlantı adresi Flet uygulamasına eklenmez.
+4. İlk açılışta `admin / admin` hesabı oluşur; ilk girişte parolayı değiştirin. Veritabanı tablolarında RLS açıktır
+   ve `anon`/`authenticated` için istemci politikası tanımlı değildir. Uygulama API'si sunucu tarafındaki PostgreSQL
+   bağlantısını kullanır; kullanıcı/rol yetkileri DÖSE API'sinde ayrıca denetlenir.
+
+Mobil Flet istemcileri `/api/senkron` üzerinden diğer oturumların işlem izini beş saniyede bir kontrol eder ve açık ana
+ekrandaki listeyi yeniler. Denetim formunda her madde ayrı sürümlendiğinden farklı roller farklı maddeleri eşzamanlı
+doldurabilir; aynı maddenin çakışan kaydı diğer kullanıcının verisini ezmez.
+
 ### 2.3 Her bilgisayarda (istemci) yapılacaklar
 
 1. Programı kurulum dosyasıyla kurun (veya `dist\DOSE_Yonetim` klasörünü kopyalayın).
@@ -186,6 +222,7 @@ Seçenekler: `--port 8765`, `--veritabani <yol>`, `--web-kapali`, `--sertifika` 
 
 - **Android:** `DOSE_Mobil.apk` dosyasını telefona gönderin ve açın. “Bilinmeyen kaynaklardan yükleme” izni
   istenirse verin.
+- **Güncel APK:** [DÖSE Mobil 1.7.3 — GitHub Releases](https://github.com/abdullah-aktas/DoYeS/releases/tag/mobile-v1.7.3).
 - **iPhone ve diğer cihazlar:** Tarayıcıda sunucu / geçit adresini açın; **Ana ekrana ekle** ile kısayol yapılabilir.
 - Giriş alanları:
   1. **Kurum kodu** (zorunlu) — masaüstündekiyle aynı MEB kodu

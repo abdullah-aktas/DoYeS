@@ -196,6 +196,20 @@ class MobilArayuz(unittest.TestCase):
         asyncio.run(coro)
 
     # ------------------------------------------------------------ senaryolar
+    def test_giris_ekrani_mobil_genisligine_uyar_ve_hatalari_gosterir(self):
+        async def senaryo():
+            self.s = SahteSayfa()
+            self.s.width = 360
+            u = U.Uygulama(self.s, "http://test")
+            with mock.patch.object(self.s, "run_task"):
+                await u.giris_ekrani()
+            self.assertTrue(any(c.width == 328 for c in self.hepsi(ft.Container)))
+            self.assertFalse(u.hata_alani.visible)
+            await u.giris_yap()
+            self.assertTrue(u.hata_alani.visible)
+            self.assertIn("Kurum kodu", u.l_hata.value)
+        self.calistir(senaryo())
+
     def test_ogretmen_fazla_calisma_ve_is_talebi(self):
         async def senaryo():
             u = await self.giris("deniz")
@@ -276,6 +290,32 @@ class MobilArayuz(unittest.TestCase):
                 u.geri()
             await self.tetikle(self.bul(ft.ListTile, "Şifre değiştir", u.govde))
             self.assertEqual(self.s.views[-1].appbar.title.value, "Şifre değiştir")
+        self.calistir(senaryo())
+
+    def test_ogretmen_denetime_kendi_gorev_maddesini_kaydeder(self):
+        giris = self.c.post("/api/giris", json={"kullanici_adi": "ali", "sifre": "Gizli123"})
+        token = {"Authorization": "Bearer " + giris.json()["token"]}
+        olustur = self.c.post("/api/denetimler", headers=token,
+                              json={"baslik": "Mobil denetim", "bilgiler": {"okul_adi": "Derik MTAL"}})
+        self.assertEqual(olustur.status_code, 200, olustur.text)
+        denetim_id = olustur.json()["id"]
+
+        async def senaryo():
+            u = await self.giris("deniz")
+            await self.sekme(u, "Diğer")
+            await self.tetikle(self.bul(ft.ListTile, "Denetim formu", u.govde))
+            await self.tetikle(self.bul(ft.ListTile, "Mobil denetim"))
+            bolum = self.bul(ft.Dropdown, "Denetim alanı")
+            bolum.value = "3.1"
+            await self.tetikle(bolum, "on_select")
+            self.bul(ft.Dropdown, "Değerlendirme").value = "Uygun"
+            self.bul(ft.TextField, "Açıklama / kanıt").value = "Öğrenci uygulama planı kontrol edildi."
+            await self.tetikle(self.bul(ft.FilledButton, "Maddeyi kaydet"))
+            madde = self.db.q1("SELECT durum, aciklama FROM denetim_madde WHERE denetim_id = ? AND madde_kodu = ?",
+                               (denetim_id, "3.1.01"))
+            self.assertEqual((madde["durum"], madde["aciklama"]),
+                             ("Uygun", "Öğrenci uygulama planı kontrol edildi."))
+
         self.calistir(senaryo())
 
 
