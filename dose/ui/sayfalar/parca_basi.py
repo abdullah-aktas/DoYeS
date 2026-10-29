@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-from ... import belgeler, excel, mevzuat, onay
+from ... import belgeler, excel, mevzuat, onay, parca_basi as ortak_parca_basi
 from ...denetim import puantaj_coz, puantaj_yaz
 from ...hesap import orantili_dagit, para, parca_basi_tavani, siparis_tahsis, tavan_uygula, ucret_kesintileri, yuvarla
 from ...pdf import tarih_tr
@@ -17,18 +17,11 @@ from .onay_sayfa import onay_kaldir, onayla_veya_gonder
 
 
 def kisi_bilgisi(kisi_turu: str, kisi_id: int) -> dict:
-    if kisi_turu == "Personel":
-        r = db().q1("SELECT ad_soyad ad, hizmet_sinifi, iban, tckn, 1 muvafakat, NULL sinif FROM personel WHERE id = ?", (kisi_id,))
-    else:
-        r = db().q1("SELECT ad_soyad ad, NULL hizmet_sinifi, iban, tckn, veli_muvafakat muvafakat, sinif FROM ogrenci WHERE id = ?",
-                    (kisi_id,))
-    return r or {"ad": "?", "hizmet_sinifi": None, "iban": None, "tckn": None, "muvafakat": 0, "sinif": None}
+    return ortak_parca_basi.kisi_bilgisi(db(), kisi_turu, kisi_id)
 
 
 def ay_ici_diger_brut(yil, ay, kisi_turu, kisi_id, haric_pb_id) -> float:
-    return db().deger("""SELECT SUM(r.brut) FROM parca_basi_satir r JOIN parca_basi pb ON pb.id = r.parca_basi_id
-                         WHERE pb.yil = ? AND pb.ay = ? AND r.kisi_turu = ? AND r.kisi_id = ? AND pb.id != ?""",
-                      (yil, ay, kisi_turu, kisi_id, haric_pb_id or 0), 0.0)
+    return ortak_parca_basi.ay_ici_diger_brut(db(), yil, ay, kisi_turu, kisi_id, haric_pb_id)
 
 
 class PuantajDialog(QDialog):
@@ -130,13 +123,7 @@ class PuantajDialog(QDialog):
 
 def onceki_kumulatif(yil, ay, kisi_turu, kisi_id, haric_pb_id) -> float:
     """Aynı yıl içinde DÖSE'den daha önce ödenen ücretlerin toplamı (GV kümülatif matrahı için varsayılan)."""
-    pb = db().deger("""SELECT SUM(r.brut) FROM parca_basi_satir r JOIN parca_basi p ON p.id = r.parca_basi_id
-                       WHERE p.yil = ? AND (p.ay < ? OR (p.ay = ? AND p.id < ?)) AND r.kisi_turu = ? AND r.kisi_id = ?
-                       AND p.id != ?""", (yil, ay, ay, haric_pb_id or 10 ** 9, kisi_turu, kisi_id, haric_pb_id or 0), 0.0)
-    fc = 0.0
-    if kisi_turu == "Personel":
-        fc = db().deger("SELECT SUM(brut) FROM fazla_calisma WHERE yil = ? AND ay < ? AND personel_id = ?", (yil, ay, kisi_id), 0.0)
-    return yuvarla(pb + fc)
+    return ortak_parca_basi.onceki_kumulatif(db(), yil, ay, kisi_turu, kisi_id, haric_pb_id)
 
 
 class ParcaBasiSayfasi(QWidget):

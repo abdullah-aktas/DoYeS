@@ -821,7 +821,7 @@ class Veritabani:
     # ------------------------------------------------------------ yedekleme / aktarım
     def yedekle(self, hedef: Path | None = None) -> Path:
         """Veritabanının SQLite dosyası olarak yedeğini alır (sunucu kullanılıyorsa da yedek bu bilgisayara iner)."""
-        hedef = Path(hedef) if hedef else YEDEKLER / f"dose_yedek_{datetime.now():%Y%m%d_%H%M%S}.db"
+        hedef = Path(hedef) if hedef else YEDEKLER / f"dose_yedek_{datetime.now():%Y%m%d_%H%M%S_%f}.db"
         if self.sunucu_mu:
             hedef.unlink(missing_ok=True)
             yedek = Veritabani(hedef)

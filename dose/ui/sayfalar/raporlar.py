@@ -1,7 +1,7 @@
 """Yönetim ve denetim raporları."""
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from ... import belgeler, mevzuat, muhasebe
+from ... import belgeler, mevzuat, muhasebe, raporlar
 from ...hesap import para, yuvarla
 from ...pdf import tr_buyuk
 from ...yonerge_raporlari import idari_masraf_karsiligi, uc_aylik_faaliyet
@@ -136,19 +136,15 @@ def r_idari_masraf(yil):
             Kolon("durum", "Durum")], idari_masraf_karsiligi(db(), yil)
 
 
-RAPORLAR = [
-    ("Sipariş bazında gelir-maliyet raporu", r_siparis),
-    ("Ürün / hizmet bazında satışlar", r_urun),
-    ("Bölüm gelirleri ve katkı oranları", r_bolum),
-    ("Aylık gelir-gider ve nakit akışı", r_aylik),
-    ("Cari hesap bakiyeleri", r_cari),
-    ("Personel yıllık DÖSE ödemeleri", r_personel),
-    ("Öğrenci ödemeleri", r_ogrenci),
-    ("Satın almalar (temin usulüne göre)", r_temin),
-    ("Hazine payı yıllık özeti", r_hazine),
-    ("Üç aylık faaliyet raporu (Çalışma Yönergesi md.48)", r_uc_aylik),
-    ("İşletme ve idari masraflar karşılığı (Çalışma Yönergesi md.11)", r_idari_masraf),
-]
+def _rapor_uret(rapor_id):
+    def uret(yil):
+        veri = raporlar.olustur(db(), yil, rapor_id)
+        kolonlar = [Kolon(k["anahtar"], k["baslik"], k["tur"]) for k in veri["kolonlar"]]
+        return kolonlar, veri["satirlar"]
+    return uret
+
+
+RAPORLAR = [(tanim[0], _rapor_uret(rapor_id)) for rapor_id, tanim in raporlar.RAPORLAR.items()]
 
 
 class RaporSayfasi(QWidget):

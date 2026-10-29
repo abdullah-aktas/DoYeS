@@ -2,17 +2,16 @@
 from PySide6.QtWidgets import (QCheckBox, QDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QPlainTextEdit,
                                QTableWidget, QVBoxLayout)
 
-from ... import belgeler, mevzuat
-from ...hesap import esas_kurallari, oran_yazi, para, yasal_maliyet_dagilimi, yuvarla
+from ... import belgeler, maliyet, mevzuat
+from ...hesap import para, yuvarla
 from ...muhasebe import ortalama_maliyet
 from ..ortak import (Alan, KayitSayfasi, MesajKutusu, OranKutusu, Oturum, ParaKutusu, SecimKutusu, VarlikTanimi,
                      bilgi, buton, bugun, cikti_yolu, db, dosya_ac, fk_secenekleri, kayit_izle, satir_odagini_izle, soru,
                      yetki_kontrol)
 
-MALZEME_UNSURLARI = ("Direkt İlk Madde ve Malzeme", "Ambalaj / Etiket")
-ISCILIK, OGRENCI, GENEL = "Direkt İşçilik (Personel)", "Öğrenci Hakkı", "Genel Üretim Gideri"
-OTO_ACIKLAMA = {ISCILIK: "Yasal üst sınır (otomatik)", OGRENCI: "İşçiliğin asgari payı (otomatik)",
-                GENEL: "Faaliyet gideri payının kalanı (otomatik)"}
+MALZEME_UNSURLARI = maliyet.MALZEME_UNSURLARI
+ISCILIK, OGRENCI, GENEL = maliyet.ISCILIK, maliyet.OGRENCI, maliyet.GENEL
+OTO_ACIKLAMA = maliyet.OTO_ACIKLAMA
 from .tanimlar import bolumler
 
 
@@ -70,7 +69,10 @@ class MaliyetDialog(QDialog):
     def __init__(self, parent, urun_id: int):
         super().__init__(parent)
         kayit_izle(self, "urun", urun_id)
-        self.urun = db().q1("SELECT u.*, b.ad bolum_ad FROM urun u LEFT JOIN bolum b ON b.id = u.bolum_id WHERE u.id = ?", (urun_id,))
+        urun = db().q1("SELECT u.*, b.ad bolum_ad FROM urun u LEFT JOIN bolum b ON b.id = u.bolum_id WHERE u.id = ?", (urun_id,))
+        if urun is None:
+            raise ValueError("Maliyet analizi yapılacak ürün / hizmet kaydı bulunamadı.")
+        self.urun = urun
         self.p = db().parametreler(Oturum.yil)
         self.setWindowTitle(f"Maliyet Analizi - {self.urun['ad']}")
         self.resize(1000, 680)
@@ -181,8 +183,9 @@ class MaliyetDialog(QDialog):
         tur.currentIndexChanged.connect(self.hesapla)
 
         def malzeme_secildi():
-            if mlz.deger():
-                bf.ayarla(ortalama_maliyet(mlz.deger()))
+            malzeme_id = mlz.deger()
+            if malzeme_id:
+                bf.ayarla(ortalama_maliyet(malzeme_id))
                 if not ack.text():
                     ack.setText(mlz.currentText())
         mlz.currentIndexChanged.connect(malzeme_secildi)
@@ -206,12 +209,9 @@ class MaliyetDialog(QDialog):
 
     def ozet(self):
         kalemler = self.kalemler()
-        maliyet = yuvarla(sum(k["miktar"] * k["birim_fiyat"] for k in kalemler), 4)
-        kar = yuvarla(maliyet * self.kar.deger(), 4)
-        satis = yuvarla(maliyet + kar)
-        kdv = yuvarla(satis * self.kdv.deger())
-        return {"birim_maliyet": yuvarla(maliyet), "kar_orani": self.kar.deger(), "kar": yuvarla(kar), "satis_fiyati": satis,
-                "kdv_orani": self.kdv.deger(), "kdv": kdv, "kdv_dahil": yuvarla(satis + kdv)}, kalemler
+        hesap = maliyet.hesapla(self.urun, self.p, kalemler, False, 0,
+                                self.kar.deger(), self.kdv.deger())
+        return hesap["ozet"], hesap["kalemler"]
 
     @staticmethod
     def _sessiz(kutu, deger):
@@ -222,29 +222,6 @@ class MaliyetDialog(QDialog):
     def _oto_satir(self, r: int) -> bool:
         tur, ack = self.t.cellWidget(r, 0).deger(), self.t.cellWidget(r, 1).text()
         return tur in (ISCILIK, OGRENCI) or (tur == GENEL and ack == OTO_ACIKLAMA[GENEL])
-
-    def _yasal_uygula(self):
-        """İşçilik, öğrenci hakkı ve genel gider satırlarını ve kâr oranını hedef fiyattan yasal üst sınırlarla doldurur."""
-        kalemler = self.kalemler()
-        malzeme = sum(k["miktar"] * k["birim_fiyat"] for k in kalemler if k["kalem_turu"] in MALZEME_UNSURLARI)
-        diger = sum(k["miktar"] * k["birim_fiyat"] for r, k in enumerate(kalemler)
-                    if k["kalem_turu"] not in MALZEME_UNSURLARI and not self._oto_satir(r))
-        m = yasal_maliyet_dagilimi(self.hedef_fiyat.deger(), malzeme, self.urun.get("ucret_esasi") or "", self.p, diger)
-        if m.hatalar:
-            return m
-        for tur, tutar in ((ISCILIK, m.personel_iscilik), (OGRENCI, m.ogrenci_hakki), (GENEL, m.genel_gider)):
-            satirlar = [r for r in range(self.t.rowCount()) if self.t.cellWidget(r, 0).deger() == tur and self._oto_satir(r)]
-            if not satirlar:
-                if not tutar:
-                    continue
-                self.satir_ekle({"kalem_turu": tur, "aciklama": OTO_ACIKLAMA[tur], "miktar": 1, "birim_fiyat": 0})
-                satirlar = [self.t.rowCount() - 1]
-            for i, r in enumerate(satirlar):
-                self.t.cellWidget(r, 1).setText(OTO_ACIKLAMA[tur])
-                self._sessiz(self.t.cellWidget(r, 3), 1)
-                self._sessiz(self.t.cellWidget(r, 4), tutar if i == 0 else 0)
-        self._sessiz(self.kar, m.kar_orani)
-        return m
 
     def _kilitle(self):
         oto = self.oto.isChecked()
@@ -258,55 +235,35 @@ class MaliyetDialog(QDialog):
     def hesapla(self):
         if not hasattr(self, "mesaj") or getattr(self, "_oto_calisiyor", True):
             return
-        hatalar, notlar = [], []
+        kalemler = self.kalemler()
+        hesap = maliyet.hesapla(self.urun, self.p, kalemler, self.oto.isChecked(),
+                                self.hedef_fiyat.deger(), self.kar.deger(), self.kdv.deger())
         if self.oto.isChecked():
-            self._oto_calisiyor = True
-            try:
-                m = self._yasal_uygula()
-            finally:
-                self._oto_calisiyor = False
-            hatalar, notlar = m.hatalar, m.notlar
-            self.oto_bilgi.setText("" if m.hatalar else
-                                   f"İşçilik <b>{para(m.iscilik)}</b> (personel {para(m.personel_iscilik)} + öğrenci "
-                                   f"{para(m.ogrenci_hakki)}) • Faaliyet gideri {para(m.faaliyet)} • Kâr {para(m.kar)} TL")
+            if not hesap["hatalar"]:
+                self._oto_calisiyor = True
+                try:
+                    self.t.setRowCount(0)
+                    for kalem in hesap["kalemler"]:
+                        self.satir_ekle(kalem)
+                    self._sessiz(self.kar, hesap["kar_orani"])
+                finally:
+                    self._oto_calisiyor = False
+            self.oto_bilgi.setText("" if hesap["hatalar"] else hesap["oto_bilgi"])
         else:
-            self.oto_bilgi.setText("Kapalı: işçilik ve giderleri elle giriniz.")
+            self.oto_bilgi.setText(hesap["oto_bilgi"])
         self._kilitle()
         for r in range(self.t.rowCount()):
             mik, bf, lbl = self.t.cellWidget(r, 3), self.t.cellWidget(r, 4), self.t.cellWidget(r, 5)
             if mik and bf and lbl:
                 lbl.setText(para(mik.deger() * bf.deger()))
-        o, kalemler = self.ozet()
+        o, kalemler = hesap["ozet"], hesap["kalemler"]
         self.l_maliyet.setText(para(o["birim_maliyet"]) + " TL")
         self.l_satis.setText(para(o["satis_fiyati"]) + " TL")
         self.l_kdvdahil.setText(f"<b>{para(o['kdv_dahil'])} TL</b>")
-        uyarilar = list(notlar)
-        iscilik = sum(k["miktar"] * k["birim_fiyat"] for k in kalemler if k["kalem_turu"] in (ISCILIK, OGRENCI))
-        ogr = sum(k["miktar"] * k["birim_fiyat"] for k in kalemler if k["kalem_turu"] == OGRENCI)
-        esas = self.urun.get("ucret_esasi") or ""
-        if iscilik > 0 and not esas.startswith("Fazla") and ogr + 0.0001 < iscilik * self.p["ogrenci_hakki_orani"]:
-            uyarilar.append(f"Öğrenci hakkı işçiliğin en az {oran_yazi(self.p['ogrenci_hakki_orani'])}'u olmalıdır "
-                            f"(şu an {oran_yazi(ogr / iscilik)}; Yön. md.8/3).")
-        kural = esas_kurallari(esas, self.p)
-        if o["satis_fiyati"] > 0 and kural["kar"]:
-            kar_payi = o["kar"] / o["satis_fiyati"]
-            if o["kar"] + 0.01 < kural["kar"] * o["satis_fiyati"]:
-                uyarilar.append(f"Satış bedelinin en az {oran_yazi(kural['kar'])}'i kâr olarak ayrılmalıdır ({kural['dayanak']}); "
-                                f"mevcut kâr payı {oran_yazi(kar_payi)}.")
-            faaliyet = sum(k["miktar"] * k["birim_fiyat"] for k in kalemler
-                           if k["kalem_turu"] not in MALZEME_UNSURLARI + (ISCILIK, OGRENCI))
-            if kural["faaliyet"] and faaliyet + 0.01 < kural["faaliyet"] * o["satis_fiyati"]:
-                uyarilar.append(f"Siparişte bedelin {oran_yazi(kural['faaliyet'])}'i faaliyet gideri olarak ayrılacaktır; "
-                                f"maliyet kartındaki genel giderler şu an {oran_yazi(faaliyet / o['satis_fiyati'])}. "
-                                "'Otomatik hesapla' işaretlenirse giderler yasal üst sınırdan doldurulur.")
-        if not self.oto.isChecked() and o["satis_fiyati"] > 0 and kural["faaliyet"]:
-            malz = sum(k["miktar"] * k["birim_fiyat"] for k in kalemler if k["kalem_turu"] in MALZEME_UNSURLARI)
-            ust = o["satis_fiyati"] * (1 - kural["kar"] - kural["faaliyet"]) - malz
-            if iscilik + 0.01 < ust:
-                uyarilar.append(f"İşçilik ({para(iscilik)} TL) yasal üst sınırın ({para(ust)} TL) altında; 'Otomatik hesapla' ile "
-                                "üst sınırdan doldurabilirsiniz.")
-        self.mesaj.goster(hatalar, uyarilar, "Maliyet unsurları mevzuat oranlarıyla uyumlu; işçilik ve giderler yasal üst sınırda."
-                          if self.oto.isChecked() else "Maliyet unsurları mevzuat oranlarıyla uyumlu.")
+        self.mesaj.goster(
+            hesap["hatalar"], hesap["uyarilar"],
+            "Maliyet unsurları mevzuat oranlarıyla uyumlu; işçilik ve giderler yasal üst sınırda."
+            if self.oto.isChecked() else "Maliyet unsurları mevzuat oranlarıyla uyumlu.")
 
     def hedeften(self):
         if self.oto.isChecked():
