@@ -159,6 +159,9 @@ KASA_ISLEM_TURLERI = ["Tahsilat", "Ödeme", "Peşinat/Avans Tahsilatı", "Faiz/D
                       "Hazine Payı Ödemesi", "SHÇEK Payı Ödemesi", "Vergi Ödemesi",
                       "Personel Ödemesi", "Merkez Saymanlık Kâr Aktarımı", "Sermaye", "Diğer"]
 HASILAT_ETKILI_TURLER = {"Tahsilat", "Peşinat/Avans Tahsilatı", "Faiz/Diğer Gelir"}
+STOK_GIRIS_NEDENLERI = ["Devir / Açılış", "Üretimden Mamul Girişi", "Sayım Fazlası", "Bağış / Hibe",
+                         "İade (Üretimden)", "Diğer"]
+STOK_CIKIS_NEDENLERI = ["Üretime Sevk", "Sayım Noksanı / Fire", "Bozulma / Hurda", "Diğer"]
 
 ROL_SISTEM = "Sistem Yöneticisi"
 ROL_MUDUR = "Okul Müdürü"

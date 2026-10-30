@@ -12,24 +12,21 @@ Okul son kullanıcısı için: [`KURULUM.md`](KURULUM.md) · Satış / lisans / 
 ## 1. Mimari (ne neye bağlanır)
 
 ```
- [Masaüstü PC'ler] ──┐
-                     ├── SQLite (yerel)  veya  PostgreSQL (merkezi)
- [Mobil Sunucu]  ────┘         ▲
-       │                       │
-       │ HTTP API :8765        │ aynı veri
-       ▼                       │
- [Android APK / tarayıcı web]──┘
+ [Flet masaüstü] ─┐
+ [Android / web] ─┼── HTTP(S) API :8765 ──> [FastAPI sunucusu]
+ [Tablet] ────────┘                              │
+                                      SQLite / PostgreSQL / Supabase
 ```
 
 | Bileşen | Ne işe yarar | Nerede |
 |--------|----------------|--------|
-| `DOSE_Yonetim.exe` | Masaüstü uygulama (PySide6) | `C:\Program Files\DOSE Yonetim\` |
-| `MobilSunucu\DOSE_Mobil_Sunucu.exe` | Telefona / tarayıcıya API + web | Aynı klasör altında; **pencere açık kalmalı** |
+| `DOSE_Yonetim.exe` | Flet masaüstü istemcisi | `C:\Program Files\DOSE Yonetim\` |
+| `MobilSunucu\DOSE_Mobil_Sunucu.exe` | Tüm istemcilere API + web | Aynı klasör altında; **pencere açık kalmalı** |
 | `veri\` | SQLite DB, `baglanti.json`, yedekler | Kurulum klasöründe; kaldırmada **silinmez** |
 | `DOSE_Mobil.apk` | Android istemci | Kurulumda `mobil\` veya ayrı dağıtım |
 | `satici\` | Lisans üretimi | **Yalnız geliştirici PC’sinde; okula gitmez** |
 
-Telefon **doğrudan veritabanına bağlanmaz**. Kurum kodu + kullanıcı + şifre ile Mobil Sunucu’ya bağlanır.
+Hiçbir istemci **doğrudan veritabanına bağlanmaz**. Flet istemcileri kurum kodu + kullanıcı + şifre ile API sunucusuna bağlanır.
 
 **Portlar**
 
@@ -45,9 +42,9 @@ Telefon **doğrudan veritabanına bağlanmaz**. Kurum kodu + kullanıcı + şifr
 
 | Klasör / dosya | İçerik |
 |----------------|--------|
-| `dose/` | İş kuralları, DB, lisans, masaüstü UI |
-| `mobil/` | Flet mobil istemci (`uygulama.py`, `kesif.py`) |
-| `sunucu/` | FastAPI mobil API |
+| `dose/` | Paylaşılan iş kuralları, DB, lisans ve belgeler |
+| `mobil/` | Flet masaüstü / Android / web istemcisi |
+| `sunucu/` | FastAPI ve web API |
 | `tests/` | Birim testleri — paketlemeden önce geçmeli |
 | `main.py` | Masaüstü giriş noktası |
 | `sunucu_main.py` | Mobil sunucu giriş noktası |
@@ -61,10 +58,10 @@ Geliştirme ortamı (Windows):
 cd D:\DÖSE
 python -m pip install -r requirements.txt
 python -m unittest discover -s tests
-python main.py
 ```
 
-İlk giriş: `admin` / `admin` → şifre değiştirme zorunlu.
+Bir terminalde `python sunucu_main.py`, ikincisinde `python main.py` çalıştırın. İlk giriş `admin / admin` →
+şifre değiştirme zorunlu.
 
 Python **3.10+** (paketleme için 3.11 kullanıldı). Mobil APK için ayrıca Flutter 3.41.x, Android SDK, JDK 17 gerekir; proje yolunda Türkçe karakter sorunu çıkarsa kaynak `C:\dose_mobil` gibi ASCII bir klasöre kopyalanıp derlenir.
 
@@ -72,26 +69,26 @@ Python **3.10+** (paketleme için 3.11 kullanıldı). Mobil APK için ayrıca Fl
 
 ## 3. Tek okul kurulum sırası (teknik servis)
 
-### 3.1 Masaüstü
+### 3.1 Flet istemcisi
 
 1. `DOSE_Yonetim_Kurulum_<sürüm>.exe` kur.
-2. Programı aç → `admin` / `admin` → yeni şifre.
-3. **Kurum ve Görevliler:** okul adı + **MEB kurum kodu** (5–8 rakam). Lisans bu koda bağlıdır; sonradan değiştirmek zordur — doğru girin.
-4. Lisans varsa **Lisans…** ile etkinleştir (yoksa 30 gün deneme).
+2. API sunucusunu başlat, ardından Flet istemcisini aç → `admin` / `admin` → yeni şifre.
+3. **Kurum ve Görevliler:** okul adı + **MEB kurum kodu** (5–8 rakam).
+4. Lisans gerekiyorsa giriş ekranındaki **Lisansı görüntüle / etkinleştir** düğmesini kullan.
 5. **Personel** kartlarını gir → **Kullanıcılar** ile her kişiye rol ver.
 6. Öğretmenleri personel kaydına, alan şeflerini bölüme bağla.
-7. Gerekirse **Onay akışı etkin** kutusunu işaretle.
+7. Gerekirse **Onay akışı etkin** ayarını aç.
 
 ### 3.2 Veri modeli seçimi
 
 | Mod | Ne zaman | Not |
 |-----|----------|-----|
-| **Yerel (SQLite)** | Tek PC veya az kullanıcı, veri o PC’de | Varsayılan; `veri\dose.db` |
-| **Merkezi PostgreSQL** | Birden fazla masaüstü aynı anda | Bağlantı ayarları → Merkezi sunucu; SSL önerilir; veri yurt içinde |
+| **Yerel (SQLite)** | Tek okul sunucusu | Varsayılan; `veri\dose.db` |
+| **PostgreSQL / Supabase** | Birden çok istemci veya barındırma | `DOSE_DATABASE_URL` yalnız API sunucusunda; SSL ve veri konumu kurallarına uyun |
 
-Aynı anda çalışacak birden fazla masaüstü varsa PostgreSQL kullanın. Mobil Sunucu hangi moda geçilmişse **aynı veriyi** kullanır (`baglanti.json` veya yerel DB).
+Flet masaüstü, web ve Android istemcileri aynı API sunucusunu ve aynı veritabanını kullanır.
 
-### 3.3 Mobil Sunucu (zorunlu — telefon için)
+### 3.3 API sunucusu (tüm istemciler için zorunlu)
 
 1. Başlat → **DÖSE Mobil Sunucu** (veya `MobilSunucu\DOSE_Mobil_Sunucu.exe`).
 2. Pencerede görünen adresi not et: örn. `http://192.168.1.10:8765` ve kurum kodu.

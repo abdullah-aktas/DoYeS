@@ -68,6 +68,24 @@ def _eslesir(hn: str, aday: str) -> bool:
     return hn == an or (len(an) >= 4 and an in hn)
 
 
+TCKN_BASLIKLARI = ["kimlik", "tc", "tcno", "tckn", "tc no"]
+AD_BASLIKLARI = ["adı soyadı", "adı ve soyadı", "ad soyad", "adsoyad", "isim"]
+PERSONEL_ICE_AKTARMA = {
+    "sicil_no": ["personel no", "sicil", "id"], "tckn": TCKN_BASLIKLARI,
+    "ad_soyad": AD_BASLIKLARI + ["personel adı"],
+    "kadro_unvani": ["unvan", "görevi", "branş"], "iban": ["iban"], "telefon": ["telefon"],
+}
+OGRENCI_ICE_AKTARMA = {
+    "okul_no": ["okul no", "okul numarası", "öğrenci no", "numara", "no"], "tckn": TCKN_BASLIKLARI,
+    "ad_soyad": AD_BASLIKLARI + ["öğrenci adı"], "sinif": ["sınıf", "şube"],
+    "iban": ["iban"], "_gorev": ["görevi", "unvan"],
+}
+
+
+def ogrenci_satiri(gorev) -> bool:
+    return _norm(str(gorev or "")).startswith(("ogrenc", "kursiyer", "stajyer"))
+
+
 def _baslik_eslesmesi(satir, alan_esleri) -> dict[str, int]:
     eslesme = {}
     for j, h in enumerate(satir):

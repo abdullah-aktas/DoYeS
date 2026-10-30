@@ -1,33 +1,25 @@
-"""Roller, bölüm kısıtı ve onay akışı testleri.
-python -m unittest tests.test_onay   (PostgreSQL için DOSE_TEST_PG ortam değişkenine bkz. test_senaryo)"""
+"""Onay iş kuralları ve rol/bölüm kısıtları.
+python -m unittest tests.test_onay (PostgreSQL için DOSE_TEST_PG ortam değişkeni desteklenir)."""
 import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tests.test_senaryo import UYARILAR, YIL, test_kaynagi  # noqa: E402  (QMessageBox yamaları da buradan gelir)
-
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from tests.test_support import YIL, test_kaynagi  # noqa: E402
 
 from dose import db as dbm  # noqa: E402
 from dose import mevzuat as M  # noqa: E402
-from dose import onay, yetki  # noqa: E402
+from dose import onay  # noqa: E402
 
 
 class OnayAkisi(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.app = QApplication.instance() or QApplication([])
         cls.tmp = tempfile.TemporaryDirectory()
         cls.db = d = dbm.baslat(test_kaynagi(Path(cls.tmp.name)))
-        from dose.ui import ortak
-        cls.ortak = ortak
-        ortak.CIKTILAR = Path(cls.tmp.name)
-        ortak.Oturum.yil = YIL
         d.kullanici = "admin"
         cls.gida = d.ekle("bolum", {"ad": "Gıda Teknolojisi"})
         cls.mobilya = d.ekle("bolum", {"ad": "Mobilya ve İç Mekân Tasarımı"})
@@ -56,7 +48,6 @@ class OnayAkisi(unittest.TestCase):
 
     def setUp(self):
         onay.akis_ayarla(True)
-        UYARILAR.clear()
 
     # ------------------------------------------------------------ yardımcılar
     def _siparis(self, bolum):
@@ -183,89 +174,6 @@ class OnayAkisi(unittest.TestCase):
         self.assertEqual(onay.durum_metni(self._durum("Yıl Sonu", YIL)), f"Bekliyor: {M.ROL_TMY}")
         onay.geri_cek("Yıl Sonu", YIL, self.k["sayman"])
         self.assertEqual(self.db.deger("SELECT durum FROM yil_sonu WHERE yil = ?", (YIL,)), "Taslak")
-
-    def test_7_her_rol_yetkili_sayfalari_acar(self):
-        from dose.ui.ana_pencere import SAYFALAR, AnaPencere
-        Oturum = self.ortak.Oturum
-        for ad in ("admin", "mudur", "tmy", "sayman", "sef_gida", "ogr_gida", "memur", "izleyici"):
-            with self.subTest(kullanici=ad):
-                Oturum.kullanici = self.k[ad]
-                rol = Oturum.rol()
-                UYARILAR.clear()
-                p = AnaPencere()
-                gorunen = set(p.yan._sayfa_satir)
-                self.assertEqual(gorunen, {s for _g, s, _m, _c in SAYFALAR if yetki.sayfa_yetkisi(rol, s)})
-                for ad_sayfa in list(p.yan._sayfa_satir):
-                    p._sayfa_ac_ad(ad_sayfa)
-                    self.assertEqual(Oturum.yazabilir(p.yigin.currentWidget()),
-                                     yetki.sayfa_yetkisi(rol, Oturum.aktif_sayfa) == "y", Oturum.aktif_sayfa)
-                self.assertFalse([u for u in UYARILAR if u[0] == "hata"], UYARILAR)
-                self.assertEqual("Kullanıcılar" in gorunen, rol == M.ROL_SISTEM)
-                p.zamanlayici.stop()
-                p.deleteLater()
-        Oturum.kullanici = self.k["admin"]
-
-    def test_8_bolum_ve_kisi_kisiti(self):
-        from dose.ui.sayfalar.fazla_calisma import FazlaCalismaSayfasi
-        from dose.ui.sayfalar.siparis import SiparisSayfasi
-        Oturum = self.ortak.Oturum
-        for kisi in ("ogr_gida", "ogr_mob", "sef_mob"):
-            self._fazla_calisma(kisi, ay=6)
-        beklenen = {"ogr_gida": {self.p["ogr_gida"]}, "sef_mob": {self.p["ogr_mob"], self.p["sef_mob"]},
-                    "mudur": {self.p["ogr_gida"], self.p["ogr_mob"], self.p["sef_mob"]}}
-        try:
-            for ad, kisiler in beklenen.items():
-                with self.subTest(kullanici=ad):
-                    Oturum.kullanici = self.k[ad]
-                    Oturum.aktif_sayfa = "Fazla Çalışma Ücreti"
-                    s = FazlaCalismaSayfasi()
-                    s.ay.ayarla(6)
-                    s.yenile()
-                    self.assertEqual({r["personel_id"] for r in s.satirlar}, kisiler)
-                    s.deleteLater()
-            Oturum.kullanici = self.k["sef_mob"]
-            Oturum.aktif_sayfa = "Siparişler / İş Emirleri"
-            self.assertEqual(Oturum.bolum_id(), self.mobilya)
-            s = SiparisSayfasi()
-            s.yenile()
-            bolumler = {self.db.deger("SELECT bolum_id FROM siparis WHERE id = ?", (r["id"],)) for r in s.tablo.satirlar}
-            self.assertEqual(bolumler, {self.mobilya})
-            s.deleteLater()
-        finally:
-            Oturum.kullanici = self.k["admin"]
-
-    def test_9_diyaloglar_acilir(self):
-        from dose.ui.baglanti_dialog import BaglantiDialog
-        from dose.ui.giris import GirisDialog
-        from dose.ui.sayfalar.onay_sayfa import OnayDialog, OnaySayfasi
-        from dose.ui.sayfalar.sistem import KullaniciSayfasi, YetkiTablosuDialog
-        Oturum = self.ortak.Oturum
-        sid = self._siparis(self.gida)
-        onay.gonder("Sipariş", sid, self.k["ogr_gida"])
-        try:
-            Oturum.kullanici = self.k["sef_gida"]
-            Oturum.aktif_sayfa = "Onay Bekleyenler"
-            s = OnaySayfasi()
-            s.yenile()
-            d = OnayDialog(None, "Sipariş", sid)
-            metinler = {d.butonlar.itemAt(i).widget().text() for i in range(d.butonlar.count()) if d.butonlar.itemAt(i).widget()}
-            self.assertTrue({"Uygun gör", "İade et"} <= metinler, metinler)
-            self.assertIn(sid, [r["belge_id"] for r in onay.bekleyenler(Oturum.kullanici)])
-            d.deleteLater()
-            s.deleteLater()
-            Oturum.kullanici = self.k["admin"]
-            for w in (BaglantiDialog(None, "deneme hatası"), GirisDialog(), YetkiTablosuDialog(None), KullaniciSayfasi()):
-                w.deleteLater()
-            k = KullaniciSayfasi()
-            k.c_akis.setChecked(False)
-            self.assertFalse(onay.akis_acik())
-            k.c_akis.setChecked(True)
-            self.assertTrue(onay.akis_acik())
-            k.deleteLater()
-        finally:
-            Oturum.kullanici = self.k["admin"]
-        self.assertFalse([u for u in UYARILAR if u[0] == "hata"], UYARILAR)
-
 
 if __name__ == "__main__":
     unittest.main()

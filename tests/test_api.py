@@ -4,7 +4,7 @@ import base64
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
@@ -177,6 +177,44 @@ class MobilApi(unittest.TestCase):
         self.assertEqual(r.json()["kurum_kodu"], "765432")
         ben = self.c.get("/api/ben", headers={"Authorization": "Bearer " + r.json()["token"]}).json()
         self.assertEqual(ben["kurum_kodu"], "765432")
+
+    def test_lisans_etkinlestirme_oturumsuz_anahtari_dogrular(self):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from unittest import mock
+
+        private_key = Ed25519PrivateKey.generate()
+        public_key = api.lisans._b64(private_key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw))
+        anahtar = api.lisans.imzala(
+            private_key, "Derik Mesleki ve Teknik Anadolu Lisesi", "765432",
+            date.today() + timedelta(days=365), "TEST-LISANS", "1 yıl")
+
+        try:
+            with mock.patch.object(api.lisans, "ACIK_ANAHTAR", public_key):
+                gecersiz = self.c.post("/api/lisans/etkinlestir", json={
+                    "kurum_kodu": "765432", "anahtar": "gecersiz lisans anahtari ve imza",
+                })
+                self.assertEqual(gecersiz.status_code, 400, gecersiz.text)
+
+                yanlis_kod = self.c.post("/api/lisans/etkinlestir", json={
+                    "kurum_kodu": "111111", "anahtar": anahtar,
+                })
+                self.assertEqual(yanlis_kod.status_code, 403, yanlis_kod.text)
+
+                etkinlestirildi = self.c.post("/api/lisans/etkinlestir", json={
+                    "kurum_kodu": "765432", "anahtar": anahtar,
+                })
+                self.assertEqual(etkinlestirildi.status_code, 200, etkinlestirildi.text)
+                self.assertEqual(etkinlestirildi.json()["lisans"], "TEST-LISANS")
+                self.assertFalse(self.db.salt_okunur)
+                durum = self.c.get("/api/durum").json()
+                self.assertIn("Lisanslı: Derik Mesleki ve Teknik Anadolu Lisesi", durum["lisans"])
+                self.assertIn((date.today() + timedelta(days=365)).strftime("%d.%m.%Y"), durum["lisans"])
+        finally:
+            self.db.ayar_yaz("lisans", "")
+            self.db.salt_okunur = False
+            api._son_lisans[0] = 0.0
 
     def test_tanim_api_yetki_validasyon_ve_kullanimda_silme_korumasini_uygular(self):
         admin = self.giris("ali")
@@ -608,6 +646,12 @@ class MobilApi(unittest.TestCase):
         self.assertIn("adimlar", kilavuz.json()["rehberler"][0])
         tumu = self.c.get("/api/kilavuz", headers=mudur, params={"tumu": "true"})
         self.assertGreaterEqual(len(tumu.json()["rehberler"]), len(kilavuz.json()["rehberler"]))
+        yardim = self.c.get("/api/kilavuz/sayfa", headers=mudur, params={"ad": "Kasa / Banka"})
+        self.assertEqual(yardim.status_code, 200, yardim.text)
+        self.assertTrue(yardim.json()["nasil"])
+        self.assertIn("dikkat", yardim.json())
+        self.assertEqual(self.c.get("/api/kilavuz/sayfa", headers=mudur,
+                                    params={"ad": "Bilinmeyen sayfa"}).status_code, 404)
 
         ogretmen = self.giris("deniz")
         denetim = self.c.get("/api/uyum", headers=ogretmen, params={"yil": YIL})
@@ -686,6 +730,435 @@ class MobilApi(unittest.TestCase):
         liste = self.c.get(f"/api/siparisler?yil={YIL}", headers=ogr).json()["siparisler"]
         self.assertNotIn(diger, [x["id"] for x in liste])
         self.assertEqual(self.c.get(f"/api/siparisler/{diger}", headers=ogr).status_code, 403)
+
+    def test_is_talebi_duzenleme_cakisma_iliski_engeli_ve_silme(self):
+        ogr = self.giris("deniz")
+        talep = {"cari_id": self.musteri, "tarih": f"{YIL}-04-03", "konu": "Düzenleme testi",
+                 "kalemler": [{"urun_id": self.urun, "miktar": 2}]}
+        ekle = self.c.post("/api/siparisler", headers=ogr, json=talep)
+        self.assertEqual(ekle.status_code, 200, ekle.text)
+        sid = ekle.json()["id"]
+        self.db.guncelle("siparis", sid, {"pesinat": 50, "sozlesme_suresi_ay": 12, "bakanlik_izni": 1})
+        detay = self.c.get(f"/api/siparisler/{sid}", headers=ogr).json()
+        self.assertTrue(detay["duzenlenebilir"])
+        self.assertTrue(detay["silinebilir"])
+        izleyici = self.c.get(f"/api/siparisler/{sid}", headers=self.giris("deneme")).json()
+        self.assertFalse(izleyici["duzenlenebilir"])
+        self.assertFalse(izleyici["silinebilir"])
+
+        masaustu = Veritabani(self.yol)
+        masaustu.oturum_ac({"kullanici_adi": "veli", "ad_soyad": "Veli Yardımcı", "rol": M.ROL_TMY},
+                           bilgisayar="TMY-PC")
+        masaustu.guncelle("siparis", sid, {"aciklama": "Masaüstünde değişti"})
+        masaustu.kapat()
+        govde = {**talep, "konu": "Güncel iş talebi", "kalemler": [{"urun_id": self.urun, "miktar": 4}],
+                 "surum": detay["surum"]}
+        cakisma = self.c.put(f"/api/siparisler/{sid}", headers=ogr, json=govde)
+        self.assertEqual(cakisma.status_code, 409, cakisma.text)
+        self.assertIn("Veli Yardımcı", cakisma.json()["hata"])
+
+        guncel_surumu = self.c.get(f"/api/siparisler/{sid}", headers=ogr).json()["surum"]
+        govde["surum"] = guncel_surumu
+        guncelle = self.c.put(f"/api/siparisler/{sid}", headers=ogr, json=govde)
+        self.assertEqual(guncelle.status_code, 200, guncelle.text)
+        self.assertEqual(guncelle.json()["siparis_no"], detay["siparis_no"])
+        saklanan = self.db.q1("SELECT tarih, konu, durum, sozlesme_bedeli, pesinat, sozlesme_suresi_ay, bakanlik_izni "
+                              "FROM siparis WHERE id = ?", (sid,))
+        self.assertEqual((saklanan["tarih"], saklanan["konu"], saklanan["durum"], saklanan["sozlesme_bedeli"],
+                          saklanan["pesinat"], saklanan["sozlesme_suresi_ay"], saklanan["bakanlik_izni"]),
+                         (f"{YIL}-04-03", "Güncel iş talebi", "Teklif", 1600, 50, 12, 1))
+        self.assertEqual(self.db.deger("SELECT miktar FROM siparis_kalem WHERE siparis_id = ?", (sid,)), 4)
+
+        for tur in ("kesif", "proforma", "teklif", "sozlesme", "maliyet", "malzeme",
+                    "gecici", "istek", "gorev", "kabul"):
+            belge = self.c.get(f"/api/siparisler/{sid}/belge/{tur}", headers=ogr)
+            self.assertEqual(belge.status_code, 200, f"{tur}: {belge.text}")
+            self.assertTrue(base64.b64decode(belge.json()["icerik"]).startswith(b"%PDF"), tur)
+        proforma = self.db.q1("SELECT proforma_no, proforma_tarih FROM siparis WHERE id = ?", (sid,))
+        self.assertTrue(proforma["proforma_no"])
+        self.assertTrue(proforma["proforma_tarih"])
+        self.assertEqual(self.c.get(f"/api/siparisler/{sid}/belge/hatalı", headers=ogr).status_code, 404)
+
+        self.db.ekle("fatura", {"tur": "Satış", "siparis_id": sid})
+        detay = self.c.get(f"/api/siparisler/{sid}", headers=ogr).json()
+        self.assertFalse(detay["silinebilir"])
+        engel = self.c.delete(f"/api/siparisler/{sid}", headers=ogr, params={"surum": detay["surum"]})
+        self.assertEqual(engel.status_code, 400, engel.text)
+        self.db.ex("DELETE FROM fatura WHERE siparis_id = ?", (sid,))
+        self.db.ekle("siparis_is_plani", {"siparis_id": sid, "kalem": "Kontrol"})
+        self.db.ekle("siparis_gorevli", {"siparis_id": sid, "kisi_turu": "Personel", "kisi_id": self.p_ogr})
+        detay = self.c.get(f"/api/siparisler/{sid}", headers=ogr).json()
+        sil = self.c.delete(f"/api/siparisler/{sid}", headers=ogr, params={"surum": detay["surum"]})
+        self.assertEqual(sil.status_code, 200, sil.text)
+        self.assertIsNone(self.db.q1("SELECT id FROM siparis WHERE id = ?", (sid,)))
+        for tablo in ("siparis_kalem", "siparis_is_plani", "siparis_gorevli"):
+            self.assertEqual(self.db.deger(f"SELECT COUNT(*) FROM {tablo} WHERE siparis_id = ?", (sid,)), 0)
+
+    def test_siparis_faturalama_stok_cikisi_ve_excel_disari_aktarimi(self):
+        talep = {"cari_id": self.musteri, "tarih": f"{YIL}-04-05", "konu": "Sipariş yan etkileri",
+                 "kalemler": [{"urun_id": self.urun, "miktar": 3}]}
+        ekle = self.c.post("/api/siparisler", headers=self.giris("deniz"), json=talep)
+        self.assertEqual(ekle.status_code, 200, ekle.text)
+        sid = ekle.json()["id"]
+        yetkili = self.giris("ayse")
+        onceki_akis = onay.akis_acik()
+        try:
+            onay.akis_ayarla(False)
+            detay = self.c.get(f"/api/siparisler/{sid}", headers=yetkili).json()
+            fatura = self.c.post(f"/api/siparisler/{sid}/faturala", headers=yetkili, json={"surum": detay["surum"]})
+            self.assertEqual(fatura.status_code, 200, fatura.text)
+            fatura_id = fatura.json()["id"]
+            self.assertEqual((fatura.json()["matrah"], fatura.json()["genel_toplam"]), (1200, 1440))
+            self.assertEqual(self.db.deger("SELECT COUNT(*) FROM fatura_kalem WHERE fatura_id = ?", (fatura_id,)), 1)
+            kalan = self.c.post(f"/api/siparisler/{sid}/faturala", headers=yetkili,
+                                json={"surum": self.c.get(f"/api/siparisler/{sid}", headers=yetkili).json()["surum"]})
+            self.assertEqual(kalan.status_code, 400, kalan.text)
+        finally:
+            onay.akis_ayarla(onceki_akis)
+
+        malzeme_id = self.db.ekle("malzeme", {"ad": "API çıkış malzemesi", "tur": "İlk Madde ve Malzeme", "birim": "kg"})
+        self.db.ekle("stok_hareket", {"tarih": f"{YIL}-04-01", "malzeme_id": malzeme_id, "yon": "Giriş",
+                                      "miktar": 5, "birim_fiyat": 12, "kaynak": "Manuel"})
+        stok_detay = self.c.post(
+            f"/api/siparisler/{sid}/stok-cikisi", headers=yetkili,
+            json={"malzeme_id": malzeme_id, "miktar": 6, "tarih": f"{YIL}-04-06", "neden": "Üretime Sevk"})
+        self.assertEqual(stok_detay.status_code, 400, stok_detay.text)
+        stok = self.c.post(
+            f"/api/siparisler/{sid}/stok-cikisi", headers=yetkili,
+            json={"malzeme_id": malzeme_id, "miktar": 2, "tarih": f"{YIL}-04-06",
+                  "neden": "Üretime Sevk", "aciklama": "Sipariş için"})
+        self.assertEqual(stok.status_code, 200, stok.text)
+        self.assertEqual(stok.json()["birim_fiyat"], 12)
+        self.assertEqual(self.db.deger("SELECT siparis_id FROM stok_hareket WHERE id = ?", (stok.json()["id"],)), sid)
+        self.assertEqual(self.db.deger("SELECT COUNT(*) FROM yevmiye WHERE kaynak = 'Stok' AND kaynak_id = ?",
+                                       (stok.json()["id"],)), 1)
+
+        disari = self.c.get(f"/api/siparisler/disa-aktar?yil={YIL}&durum=tumu", headers=yetkili)
+        self.assertEqual(disari.status_code, 200, disari.text)
+        self.assertTrue(base64.b64decode(disari.json()["icerik"]).startswith(b"PK"))
+
+    def test_fatura_olusturma_duzenleme_odeme_iptal_ve_excel_api(self):
+        sayman = self.giris("ayse")
+        def temizle_fatura_testi():
+            no_listesi = ("FLET-2026-001", "FLET-2026-002", "FLET-2026-003", "ALIŞ-API-001")
+            faturalar = self.db.q("SELECT id FROM fatura WHERE belge_no IN (?, ?, ?, ?)", no_listesi)
+            ids = [f["id"] for f in faturalar]
+            if not ids:
+                return
+            yer_tutucular = ",".join("?" for _ in ids)
+            with self.db.islem():
+                for hareket in self.db.q(f"SELECT id FROM kasa_banka WHERE fatura_id IN ({yer_tutucular})", ids):
+                    for fis in self.db.q("SELECT id FROM yevmiye WHERE kaynak = 'KasaBanka' AND kaynak_id = ?",
+                                         (hareket["id"],)):
+                        self.db.ex("DELETE FROM yevmiye_satir WHERE yevmiye_id = ?", (fis["id"],))
+                        self.db.sil("yevmiye", fis["id"])
+                    self.db.sil("kasa_banka", hareket["id"])
+                for kaynak in ("Fatura",):
+                    for fis in self.db.q(f"SELECT id FROM yevmiye WHERE kaynak = ? AND kaynak_id IN ({yer_tutucular})",
+                                         (kaynak, *ids)):
+                        self.db.ex("DELETE FROM yevmiye_satir WHERE yevmiye_id = ?", (fis["id"],))
+                        self.db.sil("yevmiye", fis["id"])
+                self.db.ex(f"DELETE FROM stok_hareket WHERE kaynak = 'Fatura' AND kaynak_id IN ({yer_tutucular})", ids)
+                self.db.ex(f"DELETE FROM fatura_kalem WHERE fatura_id IN ({yer_tutucular})", ids)
+                self.db.ex(f"DELETE FROM fatura WHERE id IN ({yer_tutucular})", ids)
+                self.db.ex("DELETE FROM malzeme WHERE ad = 'Alış fatura malzemesi'")
+                self.db.ex("DELETE FROM cari WHERE unvan = 'API Tedarikçisi'")
+        self.addCleanup(temizle_fatura_testi)
+        govde = {
+            "belge_turu": "e-Arşiv Fatura", "belge_no": "FLET-2026-001", "tarih": f"{YIL}-04-10",
+            "cari_id": self.musteri, "tevkifat": "Yok", "kalemler": [{
+                "urun_id": self.urun, "aciklama": "Test ürünü", "miktar": 2, "birim": "Adet",
+                "birim_fiyat": 10, "iskonto_orani": 0.1, "kdv_orani": 0.2,
+            }],
+        }
+        ekle = self.c.post("/api/faturalar?tur=Satış", headers=sayman, json=govde)
+        self.assertEqual(ekle.status_code, 200, ekle.text)
+        fid = ekle.json()["id"]
+        self.assertEqual((ekle.json()["matrah"], ekle.json()["kdv"], ekle.json()["genel_toplam"]), (18, 3.6, 21.6))
+        detay = self.c.get(f"/api/faturalar/{fid}", headers=sayman)
+        self.assertEqual(detay.status_code, 200, detay.text)
+        self.assertEqual(detay.json()["kalemler"][0]["iskonto"], 2)
+
+        duzenle_govde = {**govde, "surum": detay.json()["surum"], "belge_no": "FLET-2026-002",
+                         "kalemler": [{**govde["kalemler"][0], "miktar": 3}]}
+        duzenle = self.c.put(f"/api/faturalar/{fid}", headers=sayman, json=duzenle_govde)
+        self.assertEqual(duzenle.status_code, 200, duzenle.text)
+        self.assertEqual(duzenle.json()["matrah"], 27)
+
+        odeme = self.c.post(f"/api/faturalar/{fid}/odeme", headers=sayman,
+                            json={"tarih": f"{YIL}-04-11", "hesap": "Banka (102)", "tutar": 5})
+        self.assertEqual(odeme.status_code, 200, odeme.text)
+        self.assertEqual(odeme.json()["kalan"], 27 * 1.2 - 5)
+        self.assertAlmostEqual(self.db.deger("SELECT hasilat_tutari FROM kasa_banka WHERE fatura_id = ?", (fid,)),
+                               5 * 27 / (27 * 1.2), places=2)
+        guncelleme_engeli = self.c.put(f"/api/faturalar/{fid}", headers=sayman, json=duzenle_govde)
+        self.assertEqual(guncelleme_engeli.status_code, 400, guncelleme_engeli.text)
+        iptal_engeli = self.c.delete(f"/api/faturalar/{fid}", headers=sayman, params={"surum": duzenle.json()["surum"]})
+        self.assertEqual(iptal_engeli.status_code, 400, iptal_engeli.text)
+
+        disari = self.c.get(f"/api/faturalar/disa-aktar?tur=Satış&yil={YIL}", headers=sayman)
+        self.assertEqual(disari.status_code, 200, disari.text)
+        self.assertTrue(base64.b64decode(disari.json()["icerik"]).startswith(b"PK"))
+
+        iptal_govde = {**govde, "belge_no": "FLET-2026-003"}
+        iptal_fatura = self.c.post("/api/faturalar?tur=Satış", headers=sayman, json=iptal_govde)
+        self.assertEqual(iptal_fatura.status_code, 200, iptal_fatura.text)
+        iptal_detay = self.c.get(f"/api/faturalar/{iptal_fatura.json()['id']}", headers=sayman).json()
+        iptal = self.c.delete(f"/api/faturalar/{iptal_fatura.json()['id']}", headers=sayman,
+                              params={"surum": iptal_detay["surum"]})
+        self.assertEqual(iptal.status_code, 200, iptal.text)
+        self.assertTrue(self.c.get(f"/api/faturalar/{iptal_fatura.json()['id']}", headers=sayman).json()["iptal"])
+
+        tedarikci = self.db.ekle("cari", {"unvan": "API Tedarikçisi", "tur": "Tedarikçi"})
+        malzeme_id = self.db.ekle("malzeme", {"ad": "Alış fatura malzemesi", "tur": "İlk Madde ve Malzeme",
+                                              "birim": "kg"})
+        alis = self.c.post("/api/faturalar?tur=Alış", headers=sayman, json={
+            "belge_turu": "e-Fatura", "belge_no": "ALIŞ-API-001", "tarih": f"{YIL}-04-12",
+            "cari_id": tedarikci, "gider_turu": "İlk Madde ve Malzeme (Stoğa)",
+            "temin_usulu": "Doğrudan Temin", "kalemler": [{
+                "malzeme_id": malzeme_id, "aciklama": "Stok alımı", "miktar": 2, "birim": "kg",
+                "birim_fiyat": 25, "kdv_orani": 0.2,
+            }],
+        })
+        self.assertEqual(alis.status_code, 200, alis.text)
+        hareket = self.db.q1("SELECT * FROM stok_hareket WHERE kaynak = 'Fatura' AND kaynak_id = ?",
+                             (alis.json()["id"],))
+        self.assertEqual((hareket["yon"], hareket["miktar"], hareket["birim_fiyat"]), ("Giriş", 2, 25))
+        self.assertEqual(self.c.get(f"/api/faturalar/disa-aktar?tur=Alış&yil={YIL}", headers=sayman).status_code, 200)
+        onbilgi = self.c.get(f"/api/faturalar/{alis.json()['id']}/dogrudan-temin", headers=sayman)
+        self.assertEqual(onbilgi.status_code, 200, onbilgi.text)
+        paket = self.c.post("/api/belgeler/dogrudan-temin", headers=sayman, json={
+            **onbilgi.json(), "konu": "Üretim için stok alımı",
+            "firmalar": [{"ad": "Birinci Firma", "tutar": 50},
+                                            {"ad": "İkinci Firma", "tutar": 55},
+                                            {"ad": "Üçüncü Firma", "tutar": 60}],
+            "gorevliler": ["Ali Yetkili"],
+        })
+        self.assertEqual(paket.status_code, 200, paket.text)
+        self.assertTrue(base64.b64decode(paket.json()["icerik"]).startswith(b"%PDF"))
+        self.assertFalse(paket.json()["uyarilar"])
+
+    def test_kasa_api_manuel_hareket_duzenleme_silme_bakiye_yetkisi_ve_excel(self):
+        sayman = self.giris("ayse")
+        hareket_ids = []
+        kaynak_id = self.db.ekle("kasa_banka", {
+            "tarih": f"{YIL}-06-01", "hesap": "Banka (102)", "yon": "Giriş",
+            "tur": "Tahsilat", "tutar": 20, "hasilat_tutari": 20,
+            "kaynak": "HazinePayi", "kaynak_id": 12345,
+        })
+
+        def temizle():
+            with self.db.islem():
+                for hareket_id in [*hareket_ids, kaynak_id]:
+                    for fis in self.db.q("SELECT id FROM yevmiye WHERE kaynak = 'KasaBanka' AND kaynak_id = ?",
+                                         (hareket_id,)):
+                        self.db.ex("DELETE FROM yevmiye_satir WHERE yevmiye_id = ?", (fis["id"],))
+                        self.db.sil("yevmiye", fis["id"])
+                    self.db.ex("DELETE FROM kasa_banka WHERE id = ?", (hareket_id,))
+        self.addCleanup(temizle)
+
+        secenekler = self.c.get("/api/kasa", headers=sayman, params={"yil": YIL})
+        self.assertEqual(secenekler.status_code, 200, secenekler.text)
+        self.assertIn("hesaplar", secenekler.json())
+        self.assertIn("faturalar", secenekler.json())
+
+        govde = {"tarih": f"{YIL}-06-02", "hesap": "Banka (102)", "yon": "Giriş",
+                 "tur": "Faiz/Diğer Gelir", "tutar": 100, "aciklama": "Kasa API testi"}
+        ekle = self.c.post("/api/kasa", headers=sayman, json=govde)
+        self.assertEqual(ekle.status_code, 200, ekle.text)
+        hareket_id = ekle.json()["id"]
+        hareket_ids.append(hareket_id)
+        self.assertEqual(ekle.json()["hasilat_tutari"], 100)
+        detay = self.c.get(f"/api/kasa/{hareket_id}", headers=sayman)
+        self.assertEqual(detay.status_code, 200, detay.text)
+        self.assertTrue(detay.json()["duzenlenebilir"])
+
+        guncel = {**govde, "tutar": 120, "hasilat_tutari": 110, "surum": detay.json()["surum"]}
+        duzenle = self.c.put(f"/api/kasa/{hareket_id}", headers=sayman, json=guncel)
+        self.assertEqual(duzenle.status_code, 200, duzenle.text)
+        self.assertEqual(duzenle.json()["hasilat_tutari"], 110)
+        self.assertEqual(self.db.deger("SELECT COUNT(*) FROM yevmiye WHERE kaynak = 'KasaBanka' AND kaynak_id = ?",
+                                       (hareket_id,)), 1)
+        cakisma = self.c.put(f"/api/kasa/{hareket_id}", headers=self.giris("ayse", cihaz="İkinci cihaz"),
+                             json=guncel)
+        self.assertEqual(cakisma.status_code, 409, cakisma.text)
+
+        yetersiz = self.c.post("/api/kasa", headers=sayman, json={
+            "tarih": f"{YIL}-06-03", "hesap": "Kasa (100)", "yon": "Çıkış",
+            "tur": "Vergi Ödemesi", "tutar": 1000,
+        })
+        self.assertEqual(yetersiz.status_code, 409, yetersiz.text)
+        onayli = self.c.post("/api/kasa", headers=sayman, json={
+            "tarih": f"{YIL}-06-03", "hesap": "Kasa (100)", "yon": "Çıkış",
+            "tur": "Vergi Ödemesi", "tutar": 1000, "bakiye_uyarisi_onaylandi": True,
+        })
+        self.assertEqual(onayli.status_code, 200, onayli.text)
+        hareket_ids.append(onayli.json()["id"])
+
+        kaynak_detay = self.c.get(f"/api/kasa/{kaynak_id}", headers=sayman)
+        self.assertEqual(kaynak_detay.status_code, 200, kaynak_detay.text)
+        self.assertFalse(kaynak_detay.json()["duzenlenebilir"])
+        self.assertEqual(self.c.delete(f"/api/kasa/{kaynak_id}", headers=sayman,
+                                       params={"surum": kaynak_detay.json()["surum"]}).status_code, 400)
+        kaynak_duzenle = self.c.put(f"/api/kasa/{kaynak_id}", headers=sayman, json={
+            "tarih": f"{YIL}-06-01", "hesap": "Banka (102)", "yon": "Giriş",
+            "tur": "Tahsilat", "tutar": 20, "surum": kaynak_detay.json()["surum"],
+        })
+        self.assertEqual(kaynak_duzenle.status_code, 400, kaynak_duzenle.text)
+        salt_okunur = self.c.post("/api/kasa", headers=self.giris("deneme"), json=govde)
+        self.assertEqual(salt_okunur.status_code, 403, salt_okunur.text)
+        excel = self.c.get(f"/api/kasa/disa-aktar?yil={YIL}&ay=6", headers=sayman)
+        self.assertEqual(excel.status_code, 200, excel.text)
+        self.assertTrue(base64.b64decode(excel.json()["icerik"]).startswith(b"PK"))
+
+        sil = self.c.delete(f"/api/kasa/{hareket_id}", headers=sayman, params={"surum": duzenle.json()["surum"]})
+        self.assertEqual(sil.status_code, 200, sil.text)
+        hareket_ids.remove(hareket_id)
+
+    def test_stok_api_hareket_maliyet_yetersiz_stok_silme_ve_excel(self):
+        sayman = self.giris("ayse")
+        malzeme_id = self.db.ekle("malzeme", {"ad": "Stok API hareket testi", "tur": "İlk Madde ve Malzeme",
+                                              "birim": "kg"})
+        hareket_ids = []
+        fatura_kaynak_id = self.db.ekle("stok_hareket", {
+            "tarih": f"{YIL}-07-01", "malzeme_id": malzeme_id, "yon": "Giriş", "miktar": 1,
+            "birim_fiyat": 10, "kaynak": "Fatura", "kaynak_id": 98765,
+        })
+        hareket_ids.append(fatura_kaynak_id)
+
+        def temizle():
+            with self.db.islem():
+                for hareket_id in hareket_ids:
+                    for fis in self.db.q("SELECT id FROM yevmiye WHERE kaynak = 'Stok' AND kaynak_id = ?",
+                                         (hareket_id,)):
+                        self.db.ex("DELETE FROM yevmiye_satir WHERE yevmiye_id = ?", (fis["id"],))
+                        self.db.sil("yevmiye", fis["id"])
+                    self.db.ex("DELETE FROM stok_hareket WHERE id = ?", (hareket_id,))
+                self.db.ex("DELETE FROM malzeme WHERE id = ?", (malzeme_id,))
+        self.addCleanup(temizle)
+
+        liste = self.c.get(f"/api/stok?yil={YIL}", headers=sayman)
+        self.assertEqual(liste.status_code, 200, liste.text)
+        self.assertIn("Stok API hareket testi", [m["ad"] for m in liste.json()["malzemeler"]])
+        faturali = next(h for h in liste.json()["hareketler"] if h["id"] == fatura_kaynak_id)
+        self.assertFalse(faturali["silinebilir"])
+
+        giris = {"tarih": f"{YIL}-07-02", "malzeme_id": malzeme_id, "yon": "Giriş",
+                 "neden": "Devir / Açılış", "miktar": 10, "birim_fiyat": 20}
+        ekle = self.c.post("/api/stok/hareketler", headers=sayman, json=giris)
+        self.assertEqual(ekle.status_code, 200, ekle.text)
+        giris_id = ekle.json()["id"]
+        hareket_ids.append(giris_id)
+        self.assertEqual(ekle.json()["tutar"], 200)
+
+        sifir_fiyat = self.c.post("/api/stok/hareketler", headers=sayman, json={
+            **giris, "tarih": f"{YIL}-07-03", "miktar": 1, "birim_fiyat": 0,
+        })
+        self.assertEqual(sifir_fiyat.status_code, 400, sifir_fiyat.text)
+        sifir_onayli = self.c.post("/api/stok/hareketler", headers=sayman, json={
+            **giris, "tarih": f"{YIL}-07-03", "miktar": 1, "birim_fiyat": 0,
+            "sifir_fiyat_onaylandi": True,
+        })
+        self.assertEqual(sifir_onayli.status_code, 200, sifir_onayli.text)
+        hareket_ids.append(sifir_onayli.json()["id"])
+
+        cikis = {"tarih": f"{YIL}-07-04", "malzeme_id": malzeme_id, "yon": "Çıkış",
+                 "neden": "Üretime Sevk", "miktar": 3}
+        cikis_ekle = self.c.post("/api/stok/hareketler", headers=sayman, json=cikis)
+        self.assertEqual(cikis_ekle.status_code, 200, cikis_ekle.text)
+        cikis_id = cikis_ekle.json()["id"]
+        hareket_ids.append(cikis_id)
+        self.assertAlmostEqual(cikis_ekle.json()["birim_fiyat"], 17.5)
+        self.assertEqual(self.db.deger("SELECT COUNT(*) FROM yevmiye WHERE kaynak = 'Stok' AND kaynak_id = ?",
+                                       (cikis_id,)), 1)
+
+        yetersiz = self.c.post("/api/stok/hareketler", headers=sayman,
+                               json={**cikis, "miktar": 10})
+        self.assertEqual(yetersiz.status_code, 400, yetersiz.text)
+        sil = self.c.delete(f"/api/stok/hareketler/{cikis_id}", headers=sayman,
+                            params={"surum": cikis_ekle.json()["surum"]})
+        self.assertEqual(sil.status_code, 200, sil.text)
+        self.assertEqual(self.db.deger("SELECT COUNT(*) FROM yevmiye WHERE kaynak = 'Stok' AND kaynak_id = ?",
+                                       (cikis_id,)), 0)
+        hareket_ids.remove(cikis_id)
+
+        faturali_sil = self.c.delete(f"/api/stok/hareketler/{fatura_kaynak_id}", headers=sayman,
+                                     params={"surum": liste.json()["surum"]})
+        self.assertEqual(faturali_sil.status_code, 400, faturali_sil.text)
+        excel = self.c.get(f"/api/stok/disa-aktar?yil={YIL}", headers=sayman)
+        self.assertEqual(excel.status_code, 200, excel.text)
+        self.assertTrue(base64.b64decode(excel.json()["icerik"]).startswith(b"PK"))
+
+    def test_personel_ogrenci_excel_onizleme_dogrulama_ve_ice_aktarma(self):
+        from openpyxl import Workbook
+
+        sayman = self.giris("ayse")
+        yonetici = self.giris("sistem")
+
+        def xlsx_icerigi(basliklar, satirlar):
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Aktarım"
+            ws.append(basliklar)
+            for satir in satirlar:
+                ws.append(satir)
+            akim = BytesIO()
+            wb.save(akim)
+            return base64.b64encode(akim.getvalue()).decode("ascii")
+
+        govdeler = {
+            "personel": {"dosya_adi": "personel.xlsx", "icerik": xlsx_icerigi(
+                ["Sicil No", "T.C. Kimlik No", "Adı Soyadı", "Unvan", "IBAN", "Telefon"], [
+                    ["P-01", "10000000146", "Excel Personeli", "Öğretmen", "", "05550000001"],
+                    ["P-02", "10000000146", "Mükerrer Personel", "Öğretmen", "", ""],
+                    ["P-03", "", "İkinci Excel Personeli", "Öğretmen", "", ""],
+                    ["O-01", "", "Excel Öğrencisi", "Öğrenci", "", ""],
+                ])},
+            "ogrenci": {"dosya_adi": "ogrenciler.xlsx", "icerik": xlsx_icerigi(
+                ["Okul No", "T.C. Kimlik No", "Adı Soyadı", "Sınıf", "Görevi", "IBAN"], [
+                    ["O-02", "", "İçe Aktarılan Öğrenci", "10-A", "Öğrenci", "geçersiz"],
+                    ["P-04", "", "Personel Satırı", "", "Öğretmen", ""],
+                ])},
+        }
+
+        def temizle():
+            self.db.ex("DELETE FROM personel WHERE ad_soyad IN (?, ?)",
+                       ("Excel Personeli", "İkinci Excel Personeli"))
+            self.db.ex("DELETE FROM ogrenci WHERE ad_soyad = ?", ("İçe Aktarılan Öğrenci",))
+        self.addCleanup(temizle)
+
+        onizleme = self.c.post("/api/tanimlar/personel/excel-onizle", headers=sayman, json=govdeler["personel"])
+        self.assertEqual(onizleme.status_code, 200, onizleme.text)
+        ozet = onizleme.json()["ozet"]
+        self.assertEqual((ozet["aktarilacak"], ozet["mevcut"], ozet["elenen"]), (2, 1, 1))
+        self.assertEqual(onizleme.json()["sayfa"], "Aktarım")
+        aktar = self.c.post("/api/tanimlar/personel/excel-aktar", headers=sayman, json=govdeler["personel"])
+        self.assertEqual(aktar.status_code, 200, aktar.text)
+        self.assertEqual(aktar.json()["eklenen"], 2)
+        personel = self.db.q1("SELECT * FROM personel WHERE ad_soyad = 'Excel Personeli'")
+        self.assertEqual((personel["sicil_no"], personel["dose_gorevi"], personel["aktif"]),
+                         ("P-01", "Öğretmen", 1))
+
+        ogrenci_onizleme = self.c.post("/api/tanimlar/ogrenci/excel-onizle",
+                                       headers=yonetici, json=govdeler["ogrenci"])
+        self.assertEqual(ogrenci_onizleme.status_code, 200, ogrenci_onizleme.text)
+        self.assertEqual((ogrenci_onizleme.json()["ozet"]["aktarilacak"],
+                          ogrenci_onizleme.json()["ozet"]["elenen"]), (1, 1))
+        self.assertTrue(any("geçersiz IBAN" in n for n in ogrenci_onizleme.json()["ozet"]["notlar"]))
+        ogrenci_aktar = self.c.post("/api/tanimlar/ogrenci/excel-aktar", headers=yonetici,
+                                    json=govdeler["ogrenci"])
+        self.assertEqual(ogrenci_aktar.status_code, 200, ogrenci_aktar.text)
+        self.assertEqual(ogrenci_aktar.json()["eklenen"], 1)
+        ogrenci = self.db.q1("SELECT * FROM ogrenci WHERE ad_soyad = 'İçe Aktarılan Öğrenci'")
+        self.assertEqual((ogrenci["okul_no"], ogrenci["aktif"], ogrenci["veli_muvafakat"], ogrenci["iban"]),
+                         ("O-02", 1, 0, None))
+
+        hatali_dosya = self.c.post("/api/tanimlar/personel/excel-onizle", headers=sayman,
+                                   json={"dosya_adi": "hatali.xlsx", "icerik": "not-base64"})
+        self.assertEqual(hatali_dosya.status_code, 400, hatali_dosya.text)
+        salt_okunur = self.c.post("/api/tanimlar/personel/excel-aktar", headers=self.giris("deneme"),
+                                  json=govdeler["personel"])
+        self.assertEqual(salt_okunur.status_code, 403, salt_okunur.text)
 
     def test_masaustu_ile_cakisma(self):
         sef = self.giris("can")

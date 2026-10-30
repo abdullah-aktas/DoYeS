@@ -15,6 +15,9 @@ python -m PyInstaller --noconfirm --clean --windowed --name DOSE_Yonetim ^
     --icon dose\gorsel\ikon.ico ^
     --add-data "dose\gorsel;dose\gorsel" ^
     --collect-submodules dose ^
+    --collect-submodules mobil ^
+    --collect-all flet ^
+    --collect-all flet_desktop ^
     --hidden-import reportlab.graphics.barcode.common ^
     --collect-all psycopg ^
     --collect-all psycopg_binary ^
@@ -35,9 +38,6 @@ python -m PyInstaller --noconfirm --clean --console --name DOSE_Mobil_Sunucu ^
     --hidden-import reportlab.graphics.barcode.common ^
     --collect-all psycopg ^
     --collect-all psycopg_binary ^
-    --exclude-module dose.ui ^
-    --exclude-module PySide6 ^
-    --exclude-module shiboken6 ^
     --exclude-module flet_desktop ^
     --distpath dist\mobil_sunucu ^
     sunucu_main.py

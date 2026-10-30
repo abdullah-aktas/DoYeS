@@ -17,8 +17,10 @@ import sqlite3
 import threading
 import tempfile
 import time
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -37,8 +40,8 @@ from dose import (belge_sablonlari, excel, gosterge, izleme, kilavuz, lisans, ma
 from dose import mevzuat as M
 from dose.denetim import puantaj_coz
 from dose.db import KayitCakismasi, sifre_hashle
-from dose.hesap import (GUN_TURU_ADLARI, ay_azami_fazla_calisma, gun_azami_saat, gun_turu, siparis_kaydi_tahsisi,
-                        para, yuvarla)
+from dose.hesap import (GUN_TURU_ADLARI, ay_azami_fazla_calisma, belge_toplami, gun_azami_saat, gun_turu,
+                        kalem_hatalari, kalem_tutari, siparis_kaydi_tahsisi, esas_kurallari, para, yuvarla)
 from dose.islemler import IslemHatasi, fc_hesapla, siparis_taslagi_kaydet
 from dose.lisans import SaltOkunurHata, kurum_kodu_normalize
 from dose.yollar import YEDEKLER
@@ -163,6 +166,11 @@ class KesifIstegi(BaseModel):
     kurum_kodu: str
 
 
+class LisansEtkinlestirmeIstegi(BaseModel):
+    kurum_kodu: str = Field(min_length=5, max_length=8)
+    anahtar: str = Field(min_length=20, max_length=8192)
+
+
 class SifreIstegi(BaseModel):
     eski: str
     yeni: str
@@ -179,6 +187,11 @@ class AciklamaIstegi(BaseModel):
 
 class TanimKaydiIstegi(BaseModel):
     degerler: dict[str, Any]
+
+
+class TanimExcelIstegi(BaseModel):
+    dosya_adi: str = Field(min_length=1, max_length=200)
+    icerik: str = Field(min_length=4, max_length=7_000_000)
 
 
 class MaliyetKalemiIstegi(BaseModel):
@@ -308,6 +321,7 @@ class SiparisKalemi(BaseModel):
 
 
 class SiparisIstegi(BaseModel):
+    surum: int | None = Field(default=None, ge=0)
     tarih: str | None = None
     cari_id: int | None = None
     bolum_id: int | None = None
@@ -316,6 +330,108 @@ class SiparisIstegi(BaseModel):
     teslim_tarihi: str | None = None
     aciklama: str = ""
     kalemler: list[SiparisKalemi] = Field(default_factory=list)
+
+class SiparistenFaturaIstegi(BaseModel):
+    surum: int = Field(ge=0)
+    belge_turu: str = "e-Arşiv Fatura"
+    belge_no: str = Field(default="", max_length=100)
+    tarih: str = Field(default_factory=lambda: date.today().isoformat(), min_length=10, max_length=10)
+    tevkifat: str = "Yok"
+    avans_mahsup: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
+class SiparisStokCikisiIstegi(BaseModel):
+    malzeme_id: int = Field(gt=0)
+    miktar: float = Field(gt=0, allow_inf_nan=False)
+    tarih: str = Field(default_factory=lambda: date.today().isoformat(), min_length=10, max_length=10)
+    neden: str = Field(min_length=1, max_length=80)
+    aciklama: str = Field(default="", max_length=500)
+
+class FaturaKalemiIstegi(BaseModel):
+    urun_id: int | None = Field(default=None, gt=0)
+    malzeme_id: int | None = Field(default=None, gt=0)
+    aciklama: str = Field(default="", max_length=500)
+    miktar: float = Field(gt=0, allow_inf_nan=False)
+    birim: str = Field(default="Adet", min_length=1, max_length=40)
+    birim_fiyat: float = Field(ge=0, allow_inf_nan=False)
+    iskonto_orani: float = Field(default=0, ge=0, le=1, allow_inf_nan=False)
+    iskonto: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    kdv_orani: float = Field(default=0, ge=0, le=1, allow_inf_nan=False)
+
+
+class FaturaIstegi(BaseModel):
+    surum: int | None = Field(default=None, ge=0)
+    belge_turu: str
+    belge_no: str = Field(default="", max_length=100)
+    tarih: str = Field(min_length=10, max_length=10)
+    cari_id: int = Field(gt=0)
+    siparis_id: int | None = Field(default=None, gt=0)
+    aciklama: str = Field(default="", max_length=1000)
+    tevkifat: str = "Yok"
+    avans_mahsup: float = Field(default=0, ge=0, allow_inf_nan=False)
+    stopaj_turu: str = "Yok"
+    gider_turu: str = "Doğrudan Üretim Gideri"
+    temin_usulu: str = "Doğrudan Temin"
+    kontrol_toplam: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    kalemler: list[FaturaKalemiIstegi] = Field(min_length=1, max_length=500)
+
+
+class FaturaOdemeIstegi(BaseModel):
+    tarih: str = Field(min_length=10, max_length=10)
+    hesap: str = Field(pattern="^(Banka \\(102\\)|Kasa \\(100\\))$")
+    tutar: float = Field(gt=0, allow_inf_nan=False)
+    belge_no: str = Field(default="", max_length=100)
+    aciklama: str = Field(default="", max_length=500)
+
+class DogrudanTeminKalemiIstegi(BaseModel):
+    ad: str = Field(min_length=1, max_length=250)
+    miktar: float = Field(gt=0, allow_inf_nan=False)
+    birim: str = Field(default="", max_length=40)
+
+
+class DogrudanTeminTeklifiIstegi(BaseModel):
+    ad: str = Field(min_length=1, max_length=200)
+    tutar: float = Field(gt=0, allow_inf_nan=False)
+
+
+class DogrudanTeminIstegi(BaseModel):
+    fatura_id: int | None = Field(default=None, gt=0)
+    konu: str = Field(min_length=1, max_length=500)
+    tarih: str = Field(min_length=10, max_length=10)
+    sayi: str = Field(default="", max_length=100)
+    gider_turu: str
+    kalemler: list[DogrudanTeminKalemiIstegi] = Field(min_length=1, max_length=200)
+    firmalar: list[DogrudanTeminTeklifiIstegi] = Field(default_factory=list, max_length=50)
+    gorevliler: list[str] = Field(default_factory=list, max_length=20)
+    yaklasik_maliyet: float = Field(ge=0, allow_inf_nan=False)
+    teslim_yeri: str = Field(default="İşletme atölyesine", max_length=300)
+
+class KasaIstegi(BaseModel):
+    surum: int | None = Field(default=None, ge=0)
+    tarih: str = Field(min_length=10, max_length=10)
+    hesap: str
+    yon: str
+    tur: str
+    tutar: float = Field(gt=0, allow_inf_nan=False)
+    hasilat_tutari: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    cari_id: int | None = Field(default=None, gt=0)
+    fatura_id: int | None = Field(default=None, gt=0)
+    siparis_id: int | None = Field(default=None, gt=0)
+    belge_no: str = Field(default="", max_length=100)
+    aciklama: str = Field(default="", max_length=500)
+    bakiye_uyarisi_onaylandi: bool = False
+
+
+class StokHareketIstegi(BaseModel):
+    tarih: str = Field(min_length=10, max_length=10)
+    malzeme_id: int = Field(gt=0)
+    yon: str
+    neden: str = Field(min_length=1, max_length=80)
+    miktar: float = Field(gt=0, allow_inf_nan=False)
+    birim_fiyat: float = Field(default=0, ge=0, allow_inf_nan=False)
+    siparis_id: int | None = Field(default=None, gt=0)
+    aciklama: str = Field(default="", max_length=500)
+    sifir_fiyat_onaylandi: bool = False
 
 
 class FazlaIstegi(BaseModel):
@@ -644,6 +760,39 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
                     "kurum_kodu": kurum_kodu_normalize(d.kurum().get("kurum_kodu")),
                     "lisans": ld.ozet, "salt_okunur": not ld.yazilabilir, "satici": lisans.SATICI,
                     "satici_iletisim": lisans.SATICI_ILETISIM}
+
+    @app.post("/api/lisans/etkinlestir")
+    def lisans_etkinlestir(istek: LisansEtkinlestirmeIstegi):
+        kod = kurum_kodu_normalize(istek.kurum_kodu)
+        if not ag.kurum_kodu_gecerli(kod):
+            raise HTTPException(400, "Kurum kodu 5–8 rakam olmalıdır.")
+
+        def _etkinlestir(d):
+            try:
+                aktif_lisans = lisans.etkinlestir(d, istek.anahtar)
+            except lisans.LisansHatasi as exc:
+                raise HTTPException(400, str(exc)) from exc
+            _son_lisans[0] = 0.0
+            return {"lisans": aktif_lisans.no, "okul": aktif_lisans.okul,
+                    "bitis": aktif_lisans.bitis_metni(), "durum": lisans.durum(d).ozet}
+
+        if _HAVUZ:
+            if not _HAVUZ.kayitli_mi(kod):
+                raise HTTPException(404, "Bu kurum kodu geçitte tanımlı değil.")
+            with _HAVUZ.kilit(kod):
+                d = _HAVUZ.al(kod)
+                dbm.baglam_ayarla(d)
+                try:
+                    return _etkinlestir(d)
+                finally:
+                    dbm.baglam_ayarla(None)
+
+        with KILIT:
+            d = dbm.al()
+            mevcut = kurum_kodu_normalize(d.kurum().get("kurum_kodu"))
+            if mevcut and mevcut != kod:
+                raise HTTPException(403, f"Bu sunucu {mevcut} kurum koduna aittir.")
+            return _etkinlestir(d)
 
     @app.post("/api/kesif")
     def kesif(istek: KesifIstegi):
@@ -1062,6 +1211,20 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
                 } for r in rehberler],
             }
 
+    @app.get("/api/kilavuz/sayfa")
+    def sayfa_yardimi(ad: str = Query(min_length=1, max_length=100), b: Baglam = Depends(kullanici)):
+        with b:
+            yardim = kilavuz.SAYFA_YARDIMI.get(ad)
+            if not yardim:
+                raise HTTPException(404, "Bu sayfa için bağlamsal yardım bulunamadı.")
+            ne, nasil, dikkat, rehber_kodu = yardim
+            rehber = kilavuz.REHBER.get(rehber_kodu) if rehber_kodu else None
+            return {
+                "ad": ad, "ne": ne, "nasil": nasil, "dikkat": dikkat,
+                "rehber": ({"kod": rehber.kod, "baslik": rehber.baslik, "ikon": rehber.ikon}
+                           if rehber else None),
+            }
+
     # ------------------------------------------------------------ kullanıcı yönetimi
     def _kullanici_yonetim_izni(k: dict, yaz: bool = False):
         gerek(k, "Kullanıcılar", yaz=yaz)
@@ -1418,6 +1581,7 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
         s["tahsis"] = {"kar": t.kar, "faaliyet": t.faaliyet, "malzeme": t.malzeme, "azami_iscilik": t.azami_iscilik,
                        "iscilik": t.iscilik, "ogrenci_hakki": t.ogrenci_hakki, "personel_iscilik": t.personel_iscilik,
                        "asgari_pesinat": t.asgari_pesinat, "hatalar": t.hatalar, "uyarilar": t.uyarilar}
+        s["surum"] = d.son_islem_no()
         return s
 
     @app.get("/api/secenekler/siparis")
@@ -1464,6 +1628,43 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
             return {"siparisler": satirlar, "toplam": yuvarla(sum(s["sozlesme_bedeli"] or 0 for s in satirlar)),
                     "yazabilir": etkin_yetki(b.k, MOBIL_MODULLER["siparis"]) == "y"}
 
+    @app.get("/api/siparisler/disa-aktar")
+    def siparisleri_disa_aktar(yil: int = Query(default_factory=lambda: date.today().year), durum: str = "acik",
+                               ara: str = "", b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["siparis"])
+            sql = """SELECT s.siparis_no, s.tarih, c.unvan, b.ad bolum, s.konu, s.ucret_esasi, s.durum,
+                            s.sozlesme_bedeli, s.pesinat, s.iscilik_tutari, s.teslim_tarihi,
+                            (SELECT COALESCE(SUM(matrah), 0) FROM fatura f
+                             WHERE f.siparis_id = s.id AND f.tur = 'Satış' AND f.iptal = 0) faturalanan
+                     FROM siparis s LEFT JOIN cari c ON c.id = s.cari_id LEFT JOIN bolum b ON b.id = s.bolum_id
+                     WHERE substr(s.tarih, 1, 4) = ?"""
+            prm: list[Any] = [str(yil)]
+            kisit = bolum_kisiti(b.k)
+            if kisit:
+                sql += " AND s.bolum_id = ?"
+                prm.append(kisit)
+            if durum == "acik":
+                sql += " AND s.durum NOT IN ('Kapandı', 'İptal', 'Faturalandı')"
+            elif durum not in ("tumu", ""):
+                sql += " AND s.durum = ?"
+                prm.append(durum)
+            if ara.strip():
+                sql += " AND (LOWER(s.siparis_no) LIKE ? OR LOWER(s.konu) LIKE ? OR LOWER(c.unvan) LIKE ?)"
+                prm.extend([f"%{ara.strip().lower()}%"] * 3)
+            rows = d.q(sql + " ORDER BY s.tarih DESC, s.id DESC LIMIT 300", prm)
+            with tempfile.TemporaryDirectory(prefix="dose-siparis-") as dizin:
+                yol = excel.disa_aktar(
+                    Path(dizin) / f"Siparisler_{yil}.xlsx",
+                    [("Siparişler", ["Sipariş No", "Tarih", "Müşteri", "Bölüm", "Konu", "Ücret Esası", "Durum",
+                                     "Bedel (KDV hariç)", "Peşinat", "İşçilik", "Teslim Tarihi", "Faturalanan"],
+                      [[r["siparis_no"], r["tarih"], r["unvan"] or "", r["bolum"] or "", r["konu"] or "",
+                        r["ucret_esasi"] or "", r["durum"] or "", r["sozlesme_bedeli"] or 0, r["pesinat"] or 0,
+                        r["iscilik_tutari"] or 0, r["teslim_tarihi"] or "", r["faturalanan"] or 0] for r in rows])])
+                icerik = yol.read_bytes()
+            d.log("Sipariş dışa aktarma", "siparis", detay=str(yil))
+            return {"dosya_adi": yol.name, "icerik": base64.b64encode(icerik).decode("ascii")}
+
     @app.get("/api/siparisler/{sid}")
     def siparis(sid: int, b: Baglam = Depends(kullanici)):
         with b as d:
@@ -1475,15 +1676,263 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
             dr = d.q1("SELECT * FROM onay_durum WHERE belge_turu = 'Sipariş' AND belge_id = ?", (sid,))
             s["onay"] = _onay_metni({sid: dr} if dr else {}, sid, s["durum"] not in ("Teklif", "İptal"))
             s["onay_gecmisi"] = onay.gecmis("Sipariş", sid)
+            yazabilir = etkin_yetki(b.k, MOBIL_MODULLER["siparis"]) == "y"
+            s["duzenlenebilir"] = (yazabilir
+                                   and s["durum"] == "Teklif"
+                                   and (not dr or dr["durum"] not in (onay.BEKLIYOR, onay.ONAYLANDI)))
+            s["faturalandirabilir"] = (etkin_yetki(b.k, FATURA_SAYFASI["Satış"]) == "y"
+                                       and (not onay.akis_acik() or (dr and dr["durum"] == onay.ONAYLANDI)))
+            s["stok_cikisi_yapabilir"] = (etkin_yetki(b.k, MOBIL_MODULLER["stok"]) == "y")
+            s["satis_belge_turleri"] = M.SATIS_BELGE_TURLERI
+            s["tevkifat_turleri"] = list(M.TEVKIFAT_ORANLARI)
+            s["avans_kalan"] = yuvarla(
+                (d.deger("SELECT SUM(tutar) FROM kasa_banka WHERE siparis_id = ? AND tur = 'Peşinat/Avans Tahsilatı'",
+                         (sid,), 0.0) or 0)
+                - (d.deger("SELECT SUM(avans_mahsup) FROM fatura WHERE siparis_id = ? AND iptal = 0", (sid,), 0.0) or 0))
+            onay_yonetici = b.k["rol"] in yetki.GERI_ALABILEN
+            onay_engeli = dr and dr["durum"] in (onay.BEKLIYOR, onay.ONAYLANDI) and not onay_yonetici
+            s["silinebilir"] = (yazabilir and s["durum"] == "Teklif" and not onay_engeli
+                                and not d.deger("SELECT COUNT(*) FROM fatura WHERE siparis_id = ?", (sid,))
+                                and not d.deger("SELECT COUNT(*) FROM parca_basi WHERE siparis_id = ?", (sid,)))
             return s
 
     @app.post("/api/siparisler")
     def siparis_ekle(istek: SiparisIstegi, b: Baglam = Depends(kullanici)):
         with b as d:
             gerek(b.k, MOBIL_MODULLER["siparis"], yaz=True)
-            veri = istek.model_dump()
+            veri = istek.model_dump(exclude={"surum"})
             sid, no, uyarilar = siparis_taslagi_kaydet(d, veri, bolum_kisiti(b.k))
             return {"id": sid, "siparis_no": no, "uyarilar": uyarilar}
+
+    @app.put("/api/siparisler/{sid}")
+    def siparis_guncelle(sid: int, istek: SiparisIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["siparis"], yaz=True)
+            if istek.surum is None:
+                raise HTTPException(400, "Sipariş sürümü gereklidir; kaydı yeniden açıp tekrar deneyiniz.")
+            s = _siparis_detayi(d, sid)
+            kisit = bolum_kisiti(b.k)
+            if kisit and s["bolum_id"] != kisit:
+                raise HTTPException(403, "Bu sipariş bölümünüzün kapsamı dışında.")
+            if s["durum"] != "Teklif":
+                raise HTTPException(400, "Yalnız teklif aşamasındaki iş talepleri bu ekrandan değiştirilebilir.")
+            durum = onay.durum("Sipariş", sid)["durum"]
+            if durum in (onay.BEKLIYOR, onay.ONAYLANDI):
+                raise HTTPException(400, "Onay sürecindeki veya onaylanmış sipariş değiştirilemez.")
+            d.cakisma_denetle("siparis", sid, istek.surum)
+            veri = istek.model_dump(exclude={"surum"})
+            _, no, uyarilar = siparis_taslagi_kaydet(d, veri, kisit, siparis_id=sid)
+            return {"id": sid, "siparis_no": no, "uyarilar": uyarilar,
+                    "surum": d.son_islem_no()}
+
+    @app.delete("/api/siparisler/{sid}")
+    def siparis_sil(sid: int, surum: int = Query(..., ge=0), b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["siparis"], yaz=True)
+            s = _siparis_detayi(d, sid)
+            kisit = bolum_kisiti(b.k)
+            if kisit and s["bolum_id"] != kisit:
+                raise HTTPException(403, "Bu sipariş bölümünüzün kapsamı dışında.")
+            d.cakisma_denetle("siparis", sid, surum)
+            if s["durum"] != "Teklif":
+                raise HTTPException(400, "Yalnız teklif aşamasındaki iş talepleri silinebilir.")
+            durum = onay.durum("Sipariş", sid)["durum"]
+            if durum in (onay.BEKLIYOR, onay.ONAYLANDI) and b.k["rol"] not in yetki.GERI_ALABILEN:
+                raise HTTPException(400, "Onay sürecindeki veya onaylanmış sipariş silinemez; durumunu iptal ediniz.")
+            iliskili = any(d.deger(f"SELECT COUNT(*) FROM {tablo} WHERE siparis_id = ?", (sid,))
+                           for tablo in ("fatura", "parca_basi"))
+            if iliskili:
+                raise HTTPException(400, "Siparişe bağlı fatura veya parça başı kaydı var; silinemez.")
+            with d.islem():
+                for tablo in ("siparis_kalem", "siparis_gorevli", "siparis_is_plani"):
+                    d.ex(f"DELETE FROM {tablo} WHERE siparis_id = ?", (sid,))
+                onay.sil("Sipariş", sid)
+                d.sil("siparis", sid)
+            return {"tamam": True}
+
+    @app.post("/api/siparisler/{sid}/faturala")
+    def siparis_faturalandir(sid: int, istek: SiparistenFaturaIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["siparis"])
+            gerek(b.k, FATURA_SAYFASI["Satış"], yaz=True)
+            s = _siparis_detayi(d, sid)
+            kisit = bolum_kisiti(b.k)
+            if kisit and s["bolum_id"] != kisit:
+                raise HTTPException(403, "Bu sipariş bölümünüzün kapsamı dışında.")
+            if onay.akis_acik() and onay.durum("Sipariş", sid)["durum"] != onay.ONAYLANDI:
+                raise HTTPException(400, "Onay akışı açık; onaylanmamış sipariş faturalandırılamaz.")
+            try:
+                tarih = date.fromisoformat(istek.tarih)
+            except ValueError:
+                raise HTTPException(400, "Fatura tarihi YYYY-AA-GG biçiminde olmalıdır.") from None
+            if tarih.isoformat() != istek.tarih:
+                raise HTTPException(400, "Fatura tarihi YYYY-AA-GG biçiminde olmalıdır.")
+            if istek.belge_turu not in M.SATIS_BELGE_TURLERI:
+                raise HTTPException(400, "Satış belgesi türü geçersiz.")
+            if istek.tevkifat not in M.TEVKIFAT_ORANLARI:
+                raise HTTPException(400, "KDV tevkifat türü geçersiz.")
+            if istek.belge_no.strip() and d.q1(
+                    "SELECT id FROM fatura WHERE tur = 'Satış' AND belge_no = ? AND iptal = 0 AND substr(tarih, 1, 4) = ?",
+                    (istek.belge_no.strip(), istek.tarih[:4])):
+                raise HTTPException(400, "Bu belge numarası aynı yıl içinde zaten kayıtlı.")
+
+            faturalama = d.q("""SELECT k.urun_id, SUM(k.miktar) miktar
+                                FROM fatura_kalem k JOIN fatura f ON f.id = k.fatura_id
+                                WHERE f.siparis_id = ? AND f.tur = 'Satış' AND f.iptal = 0 AND k.urun_id IS NOT NULL
+                                GROUP BY k.urun_id""", (sid,))
+            onceki = {r["urun_id"]: r["miktar"] or 0 for r in faturalama}
+            kalemler, onceki_kalan = [], dict(onceki)
+            for kl in s["kalemler"]:
+                if not kl.get("urun_id"):
+                    raise HTTPException(400, "Ürün seçilmemiş sipariş kalemleri otomatik faturalandırılamaz.")
+                onceki_miktar = onceki_kalan.get(kl["urun_id"], 0)
+                siparis_miktari = kl.get("miktar") or 0
+                if onceki_miktar >= siparis_miktari:
+                    onceki_kalan[kl["urun_id"]] = yuvarla(onceki_miktar - siparis_miktari, 3)
+                    continue
+                kalan = yuvarla(siparis_miktari - onceki_miktar, 3)
+                if kalan <= 0:
+                    continue
+                onceki_kalan[kl["urun_id"]] = 0
+                urun = d.q1("SELECT kdv_orani FROM urun WHERE id = ?", (kl["urun_id"],))
+                kalem = {"urun_id": kl["urun_id"], "malzeme_id": None, "aciklama": kl.get("aciklama"),
+                         "miktar": kalan, "birim": kl.get("birim") or "Adet",
+                         "birim_fiyat": kl.get("birim_fiyat") or 0, "kdv_orani": s["kdv_orani"] or 0,
+                         "iskonto_orani": kl.get("iskonto_orani") or 0}
+                if urun:
+                    kalem["kdv_orani"] = s["kdv_orani"] if s.get("kdv_orani") is not None else urun["kdv_orani"]
+                kalem["iskonto"] = yuvarla(kalem_tutari(kalem)[0] * kalem["iskonto_orani"])
+                kalem["tutar"] = kalem_tutari(kalem)[2]
+                kalem["kdv"] = yuvarla(kalem["tutar"] * kalem["kdv_orani"])
+                kalemler.append(kalem)
+            if not kalemler:
+                raise HTTPException(400, "Faturalandırılacak kalan sipariş miktarı bulunmuyor.")
+            hatalar = kalem_hatalari(kalemler)
+            if hatalar:
+                raise HTTPException(400, "\n".join(hatalar))
+            toplam = belge_toplami(kalemler, M.TEVKIFAT_ORANLARI[istek.tevkifat])
+            avans_alinan = d.deger(
+                "SELECT SUM(tutar) FROM kasa_banka WHERE siparis_id = ? AND tur = 'Peşinat/Avans Tahsilatı'", (sid,), 0.0) or 0
+            avans_mahsup = d.deger(
+                "SELECT SUM(avans_mahsup) FROM fatura WHERE siparis_id = ? AND iptal = 0", (sid,), 0.0) or 0
+            avans_kalan = yuvarla(avans_alinan - avans_mahsup)
+            mahsup = min(avans_kalan, toplam.net_tutar) if istek.avans_mahsup is None else istek.avans_mahsup
+            if mahsup > toplam.net_tutar + 0.005:
+                raise HTTPException(400, "Avans mahsubu faturanın net tutarını aşamaz.")
+            if mahsup > avans_kalan + 0.005:
+                raise HTTPException(400, "Mahsup tutarı tahsil edilmiş ve kullanılmamış avansı aşamaz.")
+            belge_no = istek.belge_no.strip() or d.sonraki_no("satis", tarih.year, "SF")
+            with d.islem():
+                fatura_id = d.ekle("fatura", {
+                    "tur": "Satış", "belge_turu": istek.belge_turu, "belge_no": belge_no, "tarih": istek.tarih,
+                    "cari_id": s["cari_id"], "siparis_id": sid, "aciklama": s.get("konu"), "iskonto": toplam.iskonto,
+                    "matrah": toplam.matrah, "kdv": toplam.kdv, "tevkifat": istek.tevkifat,
+                    "tevkif_kdv": toplam.tevkif_kdv, "stopaj_turu": "Yok", "stopaj_orani": 0, "stopaj": 0,
+                    "genel_toplam": toplam.genel_toplam, "net_tutar": toplam.net_tutar,
+                    "avans_mahsup": mahsup,
+                })
+                for kalem in kalemler:
+                    kalem["fatura_id"] = fatura_id
+                    d.ekle("fatura_kalem", kalem, log=False)
+                    mamul = d.deger("SELECT mamul_malzeme_id FROM urun WHERE id = ?", (kalem["urun_id"],), None)
+                    if mamul:
+                        d.ekle("stok_hareket", {
+                            "tarih": istek.tarih, "malzeme_id": mamul, "yon": "Çıkış", "miktar": kalem["miktar"],
+                            "birim_fiyat": muhasebe.ortalama_maliyet(mamul, istek.tarih), "kaynak": "Fatura",
+                            "kaynak_id": fatura_id, "siparis_id": sid, "aciklama": f"Satış {belge_no}",
+                        }, log=False)
+                muhasebe.fatura_kaydi(fatura_id)
+            d.log("Siparişten satış faturası oluşturma", "siparis", sid, detay=belge_no)
+            return {"id": fatura_id, "belge_no": belge_no, "matrah": toplam.matrah,
+                    "genel_toplam": toplam.genel_toplam, "net_tutar": yuvarla(toplam.net_tutar - mahsup),
+                    "avans_mahsup": mahsup, "faturalanan_kalem_sayisi": len(kalemler)}
+
+    @app.post("/api/siparisler/{sid}/stok-cikisi")
+    def siparis_stok_cikisi(sid: int, istek: SiparisStokCikisiIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["siparis"])
+            gerek(b.k, MOBIL_MODULLER["stok"], yaz=True)
+            s = _siparis_detayi(d, sid)
+            kisit = bolum_kisiti(b.k)
+            if kisit and s["bolum_id"] != kisit:
+                raise HTTPException(403, "Bu sipariş bölümünüzün kapsamı dışında.")
+            try:
+                tarih = date.fromisoformat(istek.tarih)
+            except ValueError:
+                raise HTTPException(400, "Stok hareketi tarihi YYYY-AA-GG biçiminde olmalıdır.") from None
+            if tarih.isoformat() != istek.tarih:
+                raise HTTPException(400, "Stok hareketi tarihi YYYY-AA-GG biçiminde olmalıdır.")
+            nedenler = ["Üretime Sevk", "Sayım Noksanı / Fire", "Bozulma / Hurda", "Diğer"]
+            if istek.neden not in nedenler:
+                raise HTTPException(400, "Stok çıkış nedeni geçersiz.")
+            malzeme = d.q1("SELECT id FROM malzeme WHERE id = ? AND aktif = 1", (istek.malzeme_id,))
+            if not malzeme:
+                raise HTTPException(404, "Malzeme bulunamadı veya pasif.")
+            with d.islem():
+                kalan = muhasebe.stok_miktari(istek.malzeme_id)
+                if istek.miktar > kalan + 1e-9:
+                    raise HTTPException(400, f"Yetersiz stok. Mevcut: {kalan:g}")
+                fiyat = muhasebe.ortalama_maliyet(istek.malzeme_id, istek.tarih)
+                aciklama = istek.neden + (f" - {istek.aciklama.strip()}" if istek.aciklama.strip() else "")
+                hareket_id = d.ekle("stok_hareket", {
+                    "tarih": istek.tarih, "malzeme_id": istek.malzeme_id, "yon": "Çıkış",
+                    "miktar": istek.miktar, "birim_fiyat": fiyat, "kaynak": "Manuel",
+                    "siparis_id": sid, "aciklama": aciklama,
+                })
+                muhasebe.stok_cikis_kaydi(hareket_id)
+            return {"id": hareket_id, "birim_fiyat": fiyat,
+                    "tutar": yuvarla(istek.miktar * fiyat)}
+
+    @app.get("/api/siparisler/{sid}/belge/{tur}")
+    def siparis_belgesi(sid: int, tur: str, b: Baglam = Depends(kullanici)):
+        belge_fonksiyonlari = {
+            "kesif": ("Kesif_Is_Plani", belgeler.kesif_is_plani),
+            "proforma": ("Proforma", belgeler.proforma_fatura),
+            "teklif": ("Teklif", belgeler.teklif_mektubu),
+            "sozlesme": ("Sozlesme", belgeler.siparis_sozlesmesi),
+            "maliyet": ("On_Maliyet", belgeler.on_maliyet_cizelgesi),
+            "malzeme": ("Malzeme_Listesi", belgeler.siparis_malzeme_listesi),
+            "gecici": ("Gecici_Kabul", belgeler.gecici_kabul_tutanagi),
+            "istek": ("Calisma_Istek", belgeler.calisma_istek_listesi),
+            "gorev": ("Gorevlendirme", belgeler.gorevlendirme_onayi),
+            "kabul": ("Muayene_Kabul", belgeler.muayene_kabul_tutanagi),
+        }
+        if tur not in belge_fonksiyonlari:
+            raise HTTPException(404, "Sipariş belge türü bulunamadı.")
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["siparis"])
+            s = _siparis_detayi(d, sid)
+            kisit = bolum_kisiti(b.k)
+            if kisit and s["bolum_id"] != kisit:
+                raise HTTPException(403, "Bu sipariş bölümünüzün kapsamı dışında.")
+            if tur == "proforma":
+                gerek(b.k, MOBIL_MODULLER["siparis"], yaz=True)
+                guncel = {}
+                if not s.get("proforma_no"):
+                    guncel["proforma_no"] = d.sonraki_no("proforma", int((s.get("tarih") or str(date.today()))[:4]), "PRF")
+                if not s.get("proforma_tarih"):
+                    guncel["proforma_tarih"] = date.today().isoformat()
+                if s.get("proforma_gecerlilik_gun") in (None, ""):
+                    guncel["proforma_gecerlilik_gun"] = 30
+                if guncel:
+                    d.guncelle("siparis", sid, guncel)
+                    s.update(guncel)
+            prefix, fonksiyon = belge_fonksiyonlari[tur]
+            p = d.parametreler(int((s.get("tarih") or str(date.today()))[:4]))
+            with tempfile.TemporaryDirectory() as gecici:
+                yol = Path(gecici) / f"{prefix}_{s.get('siparis_no') or sid}.pdf"
+                if tur == "sozlesme":
+                    fonksiyon(yol, sid, esas_kurallari(s.get("ucret_esasi"), p))
+                elif tur == "maliyet":
+                    fonksiyon(yol, sid, siparis_kaydi_tahsisi(s, p), p)
+                elif tur == "malzeme":
+                    fonksiyon(yol, sid, p)
+                else:
+                    fonksiyon(yol, sid)
+                icerik = yol.read_bytes()
+                dosya_adi = yol.name
+            d.log("Sipariş belgesi oluşturma", "siparis", sid, detay=tur)
+            return {"dosya_adi": dosya_adi, "icerik": base64.b64encode(icerik).decode("ascii")}
 
     # ------------------------------------------------------------ fazla çalışma
     def _fc_kosul(k: dict) -> tuple[str, list]:
@@ -2235,6 +2684,161 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
             temiz["kod"] = f"C{sonraki + 1:04d}"
         return temiz
 
+    def _tanim_excel_satirlarini_hazirla(d, tur: str, satirlar: list[dict], k):
+        alanlar = set(excel.PERSONEL_ICE_AKTARMA if tur == "personel" else excel.OGRENCI_ICE_AKTARMA)
+        alanlar.discard("_gorev")
+        bolum = bolum_kisiti(k)
+        gorulen_tckn: set[str] = set()
+        gorulen_gorevler: set[str] = set()
+        hazir, onizleme, notlar = [], [], []
+        elenen = eksik = mevcut = sorunlu = 0
+        gorunen_alanlar = set()
+        for raw in satirlar:
+            gorev = raw.get("kadro_unvani") if tur == "personel" else raw.get("_gorev")
+            uygun = (not excel.ogrenci_satiri(gorev) if tur == "personel"
+                     else gorev in (None, "") or excel.ogrenci_satiri(gorev))
+            if not uygun:
+                elenen += 1
+                continue
+            temiz = {}
+            for alan in alanlar:
+                if alan not in raw:
+                    continue
+                deger = raw[alan]
+                if isinstance(deger, str):
+                    deger = deger.strip() or None
+                elif isinstance(deger, float) and deger.is_integer():
+                    deger = str(int(deger))
+                elif deger is not None:
+                    deger = str(deger).strip()
+                temiz[alan] = deger
+                gorunen_alanlar.add(alan)
+
+            ad = str(temiz.get("ad_soyad") or "").strip()
+            if not ad:
+                eksik += 1
+                onizleme.append({"ad": "?", "durum": "Atlandı", "neden": "Adı soyadı zorunlu."})
+                continue
+            if tur == "personel":
+                gorev = temiz.get("kadro_unvani")
+                dose_gorevi = "Öğretmen"
+                temiz.update({
+                    "hizmet_sinifi": M.HIZMET_SINIFLARI[0], "dose_gorevi": dose_gorevi,
+                    "unvan_grubu": M.GOREV_VARSAYILAN_UNVAN_GRUBU.get(dose_gorevi, 3),
+                    "istihdam": "657 s. DMK", "aktif": 1,
+                })
+            else:
+                temiz.update({"aktif": 1, "veli_muvafakat": 0})
+            if bolum is not None:
+                temiz["bolum_id"] = bolum
+
+            tckn = temiz.get("tckn")
+            if tckn and not dogrulama.tckn_gecerli(tckn):
+                notlar.append(f"{ad}: geçersiz T.C. kimlik no alınmadı.")
+                temiz["tckn"] = None
+                tckn = None
+            if tckn and (tckn in gorulen_tckn or d.q1(f"SELECT id FROM {tur} WHERE tckn = ?", (tckn,))):
+                mevcut += 1
+                onizleme.append({"ad": ad, "durum": "Atlandı", "neden": "T.C. kimlik no zaten kayıtlı."})
+                continue
+            iban = temiz.get("iban")
+            if iban:
+                iban = dogrulama.iban_normalize(iban)
+                if not dogrulama.iban_gecerli(iban):
+                    notlar.append(f"{ad}: geçersiz IBAN alınmadı.")
+                    temiz["iban"] = None
+                else:
+                    temiz["iban"] = iban
+            if tur == "personel":
+                gorev_adi = temiz["dose_gorevi"]
+                if temiz["aktif"] and gorev_adi in (
+                    "Harcama Yetkilisi (Okul Müdürü)", "Gerçekleştirme Görevlisi (Teknik Md. Yrd.)", "Sayman"
+                ):
+                    if gorev_adi in gorulen_gorevler or d.q1(
+                        "SELECT id FROM personel WHERE dose_gorevi = ? AND aktif = 1", (gorev_adi,)
+                    ):
+                        sorunlu += 1
+                        onizleme.append({"ad": ad, "durum": "Atlandı", "neden": "Aynı görevde aktif personel var."})
+                        continue
+            try:
+                temiz = _tanim_degerlerini_dogrula(d, tur, temiz)
+            except HTTPException as h:
+                sorunlu += 1
+                aciklama = str(h.detail)
+                notlar.append(f"{ad}: aktarılmadı - {aciklama}")
+                onizleme.append({"ad": ad, "durum": "Atlandı", "neden": aciklama})
+                continue
+            hazir.append(temiz)
+            if tckn:
+                gorulen_tckn.add(tckn)
+            if tur == "personel" and temiz.get("aktif"):
+                gorulen_gorevler.add(temiz.get("dose_gorevi"))
+            onizleme.append({"ad": ad, "durum": "Aktarılacak"})
+        return {
+            "satirlar": hazir,
+            "ozet": {
+                "dosyadaki_kayit": len(satirlar), "aktarilacak": len(hazir), "elenen": elenen,
+                "mevcut": mevcut, "eksik": eksik, "sorunlu": sorunlu,
+                "eslesen_alanlar": sorted(gorunen_alanlar),
+                "onizleme": onizleme[:20], "notlar": notlar[:20],
+            },
+        }
+
+    def _tanim_excel_oku(istek: TanimExcelIstegi, tur: str):
+        uzanti = Path(istek.dosya_adi).suffix.lower()
+        if uzanti not in (".xlsx", ".xlsm"):
+            raise HTTPException(400, "Yalnızca .xlsx veya .xlsm dosyası seçiniz.")
+        try:
+            icerik = base64.b64decode(istek.icerik, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(400, "Excel dosyası Base64 içerik olarak okunamadı.") from None
+        if len(icerik) > 5 * 1024 * 1024:
+            raise HTTPException(413, "Excel dosyası en fazla 5 MB olabilir.")
+        try:
+            with zipfile.ZipFile(BytesIO(icerik)) as paket:
+                bilgiler = paket.infolist()
+                if len(bilgiler) > 2000 or sum(x.file_size for x in bilgiler) > 50 * 1024 * 1024:
+                    raise HTTPException(413, "Excel dosyasının açılmış boyutu veya içerik sayısı sınırı aşıyor.")
+        except zipfile.BadZipFile:
+            raise HTTPException(400, "Seçilen dosya geçerli bir Excel çalışma kitabı değil.") from None
+        alan_esleri = excel.PERSONEL_ICE_AKTARMA if tur == "personel" else excel.OGRENCI_ICE_AKTARMA
+        try:
+            with tempfile.TemporaryDirectory(prefix="dose-excel-ice-aktar-") as dizin:
+                yol = Path(dizin) / f"aktar{uzanti}"
+                yol.write_bytes(icerik)
+                satirlar, sayfa = excel.tablo_bul(yol, alan_esleri)
+        except (InvalidFileException, OSError, TypeError, ValueError, KeyError, zipfile.BadZipFile) as h:
+            raise HTTPException(400, f"Excel dosyası okunamadı: {h}") from None
+        if not sayfa or not satirlar:
+            raise HTTPException(400, "Dosyada eşleşen başlık satırı veya aktarılabilecek kayıt bulunamadı.")
+        if len(satirlar) > 5000:
+            raise HTTPException(413, "Bir Excel dosyasında en fazla 5.000 satır aktarılabilir.")
+        return satirlar, sayfa
+
+    @app.post("/api/tanimlar/{tur}/excel-onizle")
+    def tanim_excel_onizle(tur: str, istek: TanimExcelIstegi, b: Baglam = Depends(kullanici)):
+        if tur not in ("personel", "ogrenci"):
+            raise HTTPException(404, "Excel içe aktarma yalnız personel ve öğrenci kayıtları içindir.")
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER[tur])
+            satirlar, sayfa = _tanim_excel_oku(istek, tur)
+            plan = _tanim_excel_satirlarini_hazirla(d, tur, satirlar, b.k)
+            return {"sayfa": sayfa, "ozet": plan["ozet"], "yazabilir": etkin_yetki(b.k, MOBIL_MODULLER[tur]) == "y"}
+
+    @app.post("/api/tanimlar/{tur}/excel-aktar")
+    def tanim_excel_aktar(tur: str, istek: TanimExcelIstegi, b: Baglam = Depends(kullanici)):
+        if tur not in ("personel", "ogrenci"):
+            raise HTTPException(404, "Excel içe aktarma yalnız personel ve öğrenci kayıtları içindir.")
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER[tur], yaz=True)
+            with d.islem():
+                satirlar, sayfa = _tanim_excel_oku(istek, tur)
+                plan = _tanim_excel_satirlarini_hazirla(d, tur, satirlar, b.k)
+                for values in plan["satirlar"]:
+                    d.ekle(tur, values, log=False)
+                d.log("Excel içe aktarma", tur, None, f"{len(plan['satirlar'])} kayıt ({sayfa})")
+            return {"sayfa": sayfa, "ozet": plan["ozet"], "eklenen": len(plan["satirlar"])}
+
     @app.post("/api/tanimlar/{tur}")
     def tanim_ekle(tur: str, istek: TanimKaydiIstegi, b: Baglam = Depends(kullanici)):
         if tur not in TANIM_ALANLARI:
@@ -2771,21 +3375,130 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
                 return {"yil": yil, "ay": ay, "detay": yukumluluk.muhtasar_detayi(d, yil, ay)}
 
     # ------------------------------------------------------------ listeler
+    def _stok_bakiyeleri(d):
+        bakiyeler = d.q("""SELECT m.id, m.kod, m.ad, m.tur, m.birim, m.kritik_stok,
+                                  COALESCE(SUM(CASE WHEN h.yon = 'Giriş' THEN h.miktar END), 0) giris,
+                                  COALESCE(SUM(CASE WHEN h.yon = 'Çıkış' THEN h.miktar END), 0) cikis
+                           FROM malzeme m LEFT JOIN stok_hareket h ON h.malzeme_id = m.id
+                           WHERE m.aktif = 1 GROUP BY m.id ORDER BY m.ad""")
+        for r in bakiyeler:
+            r["kalan"] = yuvarla(r["giris"] - r["cikis"], 3)
+            r["ortalama_maliyet"] = muhasebe.ortalama_maliyet(r["id"])
+            r["tutar"] = yuvarla(r["kalan"] * r["ortalama_maliyet"])
+            r["kritik"] = bool(r["kritik_stok"] and r["kalan"] <= r["kritik_stok"])
+        return bakiyeler
+
     @app.get("/api/stok")
-    def stok(b: Baglam = Depends(kullanici)):
+    def stok(yil: int = Query(default_factory=lambda: date.today().year, ge=2000, le=2200),
+             b: Baglam = Depends(kullanici)):
         with b as d:
             gerek(b.k, MOBIL_MODULLER["stok"])
-            bak = d.q("""SELECT m.id, m.kod, m.ad, m.tur, m.birim, m.kritik_stok,
-                                COALESCE(SUM(CASE WHEN h.yon = 'Giriş' THEN h.miktar END), 0) giris,
-                                COALESCE(SUM(CASE WHEN h.yon = 'Çıkış' THEN h.miktar END), 0) cikis
-                         FROM malzeme m LEFT JOIN stok_hareket h ON h.malzeme_id = m.id
-                         WHERE m.aktif = 1 GROUP BY m.id ORDER BY m.ad""")
-            for r in bak:
-                r["kalan"] = yuvarla(r["giris"] - r["cikis"], 3)
-                r["ortalama_maliyet"] = muhasebe.ortalama_maliyet(r["id"])
-                r["tutar"] = yuvarla(r["kalan"] * r["ortalama_maliyet"])
-                r["kritik"] = bool(r["kritik_stok"] and r["kalan"] <= r["kritik_stok"])
-            return {"malzemeler": bak, "toplam": yuvarla(sum(r["tutar"] for r in bak))}
+            bakiyeler = _stok_bakiyeleri(d)
+            hareketler = d.q("""SELECT h.id, h.tarih, h.malzeme_id, m.ad malzeme, m.birim, h.yon, h.miktar,
+                                       h.birim_fiyat, h.miktar * h.birim_fiyat tutar, h.kaynak, h.kaynak_id,
+                                       h.siparis_id, s.siparis_no, h.aciklama
+                                FROM stok_hareket h JOIN malzeme m ON m.id = h.malzeme_id
+                                LEFT JOIN siparis s ON s.id = h.siparis_id
+                                WHERE substr(h.tarih, 1, 4) = ? ORDER BY h.tarih DESC, h.id DESC LIMIT 2000""",
+                               (str(yil),))
+            for h in hareketler:
+                h["silinebilir"] = h["kaynak"] != "Fatura" and etkin_yetki(b.k, MOBIL_MODULLER["stok"]) == "y"
+            return {"malzemeler": bakiyeler, "hareketler": hareketler,
+                    "toplam": yuvarla(sum(r["tutar"] for r in bakiyeler)),
+                    "yazabilir": etkin_yetki(b.k, MOBIL_MODULLER["stok"]) == "y",
+                    "surum": d.son_islem_no(),
+                    "giris_nedenleri": M.STOK_GIRIS_NEDENLERI, "cikis_nedenleri": M.STOK_CIKIS_NEDENLERI,
+                    "malzeme_secenekleri": [m for m in bakiyeler if m["id"]],
+                    "siparisler": d.q("""SELECT id, siparis_no, konu FROM siparis
+                                          WHERE durum NOT IN ('İptal', 'Kapandı') ORDER BY id DESC LIMIT 500""")}
+
+    @app.post("/api/stok/hareketler")
+    def stok_hareket_ekle(istek: StokHareketIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["stok"], yaz=True)
+            if istek.yon not in ("Giriş", "Çıkış"):
+                raise HTTPException(400, "Stok hareket yönü 'Giriş' veya 'Çıkış' olmalıdır.")
+            nedenler = M.STOK_GIRIS_NEDENLERI if istek.yon == "Giriş" else M.STOK_CIKIS_NEDENLERI
+            if istek.neden not in nedenler:
+                raise HTTPException(400, "Stok hareket nedeni seçilen yöne uygun değil.")
+            try:
+                hareket_tarihi = date.fromisoformat(istek.tarih)
+            except ValueError:
+                raise HTTPException(400, "Stok hareketi tarihi YYYY-AA-GG biçiminde olmalıdır.") from None
+            if hareket_tarihi.isoformat() != istek.tarih:
+                raise HTTPException(400, "Stok hareketi tarihi YYYY-AA-GG biçiminde olmalıdır.")
+            malzeme = d.q1("SELECT id FROM malzeme WHERE id = ? AND aktif = 1", (istek.malzeme_id,))
+            if not malzeme:
+                raise HTTPException(404, "Malzeme bulunamadı veya pasif.")
+            if istek.yon == "Giriş" and istek.birim_fiyat == 0 and not istek.sifir_fiyat_onaylandi:
+                raise HTTPException(400, "Sıfır birim fiyatlı stok girişi için açık onay veriniz.")
+            if istek.siparis_id and not d.q1(
+                    "SELECT id FROM siparis WHERE id = ? AND durum NOT IN ('İptal', 'Kapandı')",
+                    (istek.siparis_id,)):
+                raise HTTPException(400, "Sipariş bulunamadı, iptal edildi veya kapandı.")
+            with d.islem():
+                fiyat = istek.birim_fiyat
+                if istek.yon == "Çıkış":
+                    kalan = muhasebe.stok_miktari(istek.malzeme_id)
+                    if istek.miktar > kalan + 1e-9:
+                        raise HTTPException(400, f"Yetersiz stok. Mevcut: {kalan:g}")
+                    fiyat = muhasebe.ortalama_maliyet(istek.malzeme_id, istek.tarih)
+                aciklama = istek.neden + (f" - {istek.aciklama.strip()}" if istek.aciklama.strip() else "")
+                hareket_id = d.ekle("stok_hareket", {
+                    "tarih": istek.tarih, "malzeme_id": istek.malzeme_id, "yon": istek.yon,
+                    "miktar": istek.miktar, "birim_fiyat": fiyat, "kaynak": "Manuel",
+                    "siparis_id": istek.siparis_id, "aciklama": aciklama,
+                })
+                if istek.yon == "Çıkış":
+                    muhasebe.stok_cikis_kaydi(hareket_id)
+            d.log("Manuel stok hareketi oluşturma", "stok_hareket", hareket_id,
+                  detay=f"{istek.yon} / {istek.miktar:g} / {istek.neden}")
+            return {"id": hareket_id, "birim_fiyat": fiyat, "tutar": yuvarla(istek.miktar * fiyat),
+                    "surum": d.son_islem_no()}
+
+    @app.delete("/api/stok/hareketler/{hareket_id:int}")
+    def stok_hareket_sil(hareket_id: int, surum: int = Query(..., ge=0), b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["stok"], yaz=True)
+            with d.islem():
+                hareket = d.q1("SELECT * FROM stok_hareket WHERE id = ?", (hareket_id,))
+                if not hareket:
+                    raise HTTPException(404, "Stok hareketi bulunamadı.")
+                if hareket["kaynak"] == "Fatura":
+                    raise HTTPException(400, "Faturadan oluşan hareket ilgili belge düzenlenerek veya iptal edilerek değiştirilmelidir.")
+                d.cakisma_denetle("stok_hareket", hareket_id, surum)
+                d.sil("stok_hareket", hareket_id)
+                muhasebe.fis_sil("Stok", hareket_id)
+            return {"tamam": True}
+
+    @app.get("/api/stok/disa-aktar")
+    def stok_disa_aktar(yil: int = Query(default_factory=lambda: date.today().year, ge=2000, le=2200),
+                        b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["stok"])
+            bakiyeler = _stok_bakiyeleri(d)
+            hareketler = d.q("""SELECT h.tarih, h.yon, m.kod, m.ad malzeme, h.miktar, m.birim,
+                                       h.birim_fiyat, h.miktar * h.birim_fiyat tutar, h.kaynak,
+                                       s.siparis_no, h.aciklama
+                                FROM stok_hareket h JOIN malzeme m ON m.id = h.malzeme_id
+                                LEFT JOIN siparis s ON s.id = h.siparis_id
+                                WHERE substr(h.tarih, 1, 4) = ? ORDER BY h.tarih DESC, h.id DESC LIMIT 5000""",
+                               (str(yil),))
+            with tempfile.TemporaryDirectory(prefix="dose-stok-") as dizin:
+                yol = excel.disa_aktar(
+                    Path(dizin) / f"Stok_{yil}.xlsx",
+                    [("Stok bakiyeleri", ["Kod", "Malzeme", "Tür", "Birim", "Giriş", "Çıkış", "Kalan",
+                                           "Kritik seviye", "Ort. maliyet", "Stok değeri"],
+                      [[r["kod"] or "", r["ad"], r["tur"] or "", r["birim"] or "", r["giris"], r["cikis"],
+                        r["kalan"], r["kritik_stok"] or 0, r["ortalama_maliyet"], r["tutar"]] for r in bakiyeler]),
+                     ("Stok hareketleri", ["Tarih", "Yön", "Kod", "Malzeme", "Miktar", "Birim",
+                                           "Birim fiyat", "Tutar", "Kaynak", "Sipariş", "Açıklama"],
+                      [[r["tarih"], r["yon"], r["kod"] or "", r["malzeme"], r["miktar"], r["birim"] or "",
+                        r["birim_fiyat"] or 0, r["tutar"] or 0, r["kaynak"] or "", r["siparis_no"] or "",
+                        r["aciklama"] or ""] for r in hareketler])])
+                icerik = yol.read_bytes()
+            d.log("Stok bakiyesi ve hareketlerini dışa aktarma", "stok_hareket", detay=str(yil))
+            return {"dosya_adi": yol.name, "icerik": base64.b64encode(icerik).decode("ascii")}
 
     @app.get("/api/kasa")
     def kasa(yil: int = Query(default_factory=lambda: date.today().year), ay: int = Query(0, ge=0, le=12),
@@ -2794,6 +3507,7 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
             gerek(b.k, MOBIL_MODULLER["kasa"])
             donem = f"{yil}" + (f"-{ay:02d}" if ay else "")
             sql = """SELECT k.id, k.tarih, k.hesap, k.yon, k.tur, k.tutar, k.hasilat_tutari, k.belge_no, k.aciklama,
+                            k.kaynak, k.kaynak_id, k.cari_id, k.fatura_id, k.siparis_id,
                             c.unvan, f.belge_no fatura_no, s.siparis_no
                      FROM kasa_banka k LEFT JOIN cari c ON c.id = k.cari_id LEFT JOIN fatura f ON f.id = k.fatura_id
                      LEFT JOIN siparis s ON s.id = k.siparis_id WHERE k.tarih LIKE ?"""
@@ -2806,7 +3520,199 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
                                                "WHERE hesap = ?", (h,), 0.0))
             return {"kasa": bakiye("Kasa (100)"), "banka": bakiye("Banka (102)"), "hareketler": hareketler,
                     "giris": yuvarla(sum(h["tutar"] for h in hareketler if h["yon"] == "Giriş")),
-                    "cikis": yuvarla(sum(h["tutar"] for h in hareketler if h["yon"] == "Çıkış"))}
+                    "cikis": yuvarla(sum(h["tutar"] for h in hareketler if h["yon"] == "Çıkış")),
+                    "yazabilir": etkin_yetki(b.k, MOBIL_MODULLER["kasa"]) == "y",
+                    "surum": d.son_islem_no(), "hesaplar": M.KASA_HESAPLARI,
+                    "giris_turleri": ["Tahsilat", "Peşinat/Avans Tahsilatı", "Faiz/Diğer Gelir", "Sermaye", "Diğer"],
+                    "cikis_turleri": ["Ödeme", "Hazine Payı Ödemesi", "SHÇEK Payı Ödemesi", "Vergi Ödemesi",
+                                      "Personel Ödemesi", "Merkez Saymanlık Kâr Aktarımı", "Diğer"],
+                    "cariler": d.q("SELECT id, unvan FROM cari WHERE aktif = 1 ORDER BY unvan"),
+                    "faturalar": (d.q("""SELECT f.id, f.tur, f.belge_no, f.tarih, f.cari_id, f.siparis_id, c.unvan,
+                                                f.net_tutar - COALESCE(f.avans_mahsup, 0) -
+                                                COALESCE((SELECT SUM(tutar) FROM kasa_banka k WHERE k.fatura_id = f.id), 0) kalan
+                                         FROM fatura f LEFT JOIN cari c ON c.id = f.cari_id
+                                         WHERE f.iptal = 0 ORDER BY f.tarih DESC, f.id DESC LIMIT 500""")
+                                  if any(etkin_yetki(b.k, modul) for modul in FATURA_SAYFASI.values()) else []),
+                    "siparisler": d.q("SELECT id, siparis_no, konu FROM siparis WHERE durum != 'İptal' ORDER BY id DESC LIMIT 500")}
+
+    @app.get("/api/kasa/disa-aktar")
+    def kasa_disa_aktar(yil: int = Query(default_factory=lambda: date.today().year),
+                        ay: int = Query(0, ge=0, le=12), hesap: str = "", b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["kasa"])
+            donem = f"{yil}" + (f"-{ay:02d}" if ay else "")
+            sql = """SELECT k.tarih, k.hesap, k.yon, k.tur, c.unvan, f.belge_no fatura_no, s.siparis_no,
+                            k.belge_no, k.tutar, k.hasilat_tutari, k.aciklama, k.kaynak
+                     FROM kasa_banka k LEFT JOIN cari c ON c.id = k.cari_id
+                     LEFT JOIN fatura f ON f.id = k.fatura_id LEFT JOIN siparis s ON s.id = k.siparis_id
+                     WHERE k.tarih LIKE ?"""
+            prm: list[Any] = [donem + "%"]
+            if hesap:
+                if hesap not in M.KASA_HESAPLARI:
+                    raise HTTPException(400, "Kasa/banka hesabı geçersiz.")
+                sql += " AND k.hesap = ?"
+                prm.append(hesap)
+            rows = d.q(sql + " ORDER BY k.tarih DESC, k.id DESC LIMIT 5000", prm)
+            with tempfile.TemporaryDirectory(prefix="dose-kasa-") as dizin:
+                yol = excel.disa_aktar(
+                    Path(dizin) / f"Kasa_Banka_{donem}.xlsx",
+                    [("Kasa ve Banka", ["Tarih", "Hesap", "Yön", "İşlem türü", "Cari", "Fatura", "Sipariş",
+                                        "Dekont / makbuz", "Tutar", "Hasılat", "Açıklama", "Kaynak"],
+                      [[r["tarih"], r["hesap"], r["yon"], r["tur"], r["unvan"] or "", r["fatura_no"] or "",
+                        r["siparis_no"] or "", r["belge_no"] or "", r["tutar"] or 0, r["hasilat_tutari"] or 0,
+                        r["aciklama"] or "", r["kaynak"] or ""] for r in rows])])
+                icerik = yol.read_bytes()
+            d.log("Kasa/banka dışa aktarma", "kasa_banka", detay=donem)
+            return {"dosya_adi": yol.name, "icerik": base64.b64encode(icerik).decode("ascii")}
+
+    def _kasa_hasilati(d, istek: KasaIstegi) -> float:
+        if istek.yon != "Giriş" or istek.tur not in M.HASILAT_ETKILI_TURLER:
+            return 0.0
+        if istek.hasilat_tutari is not None:
+            return yuvarla(istek.hasilat_tutari)
+        if istek.tur == "Tahsilat" and istek.fatura_id:
+            f = d.q1("SELECT matrah, net_tutar FROM fatura WHERE id = ?", (istek.fatura_id,))
+            return yuvarla(istek.tutar * f["matrah"] / f["net_tutar"]) if f and f["net_tutar"] else istek.tutar
+        if istek.tur == "Peşinat/Avans Tahsilatı" and istek.siparis_id:
+            kdv = d.deger("SELECT kdv_orani FROM siparis WHERE id = ?", (istek.siparis_id,), 0.0) or 0
+            return yuvarla(istek.tutar / (1 + kdv))
+        if istek.tur == "Tahsilat":
+            kdv = d.parametreler(int(istek.tarih[:4]))["kdv_genel"]
+            return yuvarla(istek.tutar / (1 + kdv))
+        return yuvarla(istek.tutar)
+
+    def _kasa_hareketini_kaydet(d, istek: KasaIstegi, hareket_id: int | None = None):
+        if istek.hesap not in M.KASA_HESAPLARI or istek.yon not in ("Giriş", "Çıkış"):
+            raise HTTPException(400, "Kasa/banka hesabı veya hareket yönü geçersiz.")
+        turler = ({"Tahsilat", "Peşinat/Avans Tahsilatı", "Faiz/Diğer Gelir", "Sermaye", "Diğer"}
+                  if istek.yon == "Giriş" else
+                  {"Ödeme", "Hazine Payı Ödemesi", "SHÇEK Payı Ödemesi", "Vergi Ödemesi",
+                   "Personel Ödemesi", "Merkez Saymanlık Kâr Aktarımı", "Diğer"})
+        if istek.tur not in turler:
+            raise HTTPException(400, "Hareket türü seçilen yönle uyumlu değil.")
+        try:
+            hareket_tarihi = date.fromisoformat(istek.tarih)
+        except ValueError:
+            raise HTTPException(400, "Hareket tarihi YYYY-AA-GG biçiminde olmalıdır.") from None
+        if hareket_tarihi.isoformat() != istek.tarih:
+            raise HTTPException(400, "Hareket tarihi YYYY-AA-GG biçiminde olmalıdır.")
+        eski = d.q1("SELECT * FROM kasa_banka WHERE id = ?", (hareket_id,)) if hareket_id else None
+        if hareket_id and not eski:
+            raise HTTPException(404, "Kasa/banka hareketi bulunamadı.")
+        if eski and eski.get("kaynak"):
+            raise HTTPException(400, f"Bu kayıt '{eski['kaynak']}' modülünden oluşturuldu; ilgili modülden değiştiriniz.")
+        fatura = d.q1("SELECT * FROM fatura WHERE id = ? AND iptal = 0", (istek.fatura_id,)) if istek.fatura_id else None
+        if istek.fatura_id and not fatura:
+            raise HTTPException(400, "Fatura bulunamadı veya iptal edilmiş.")
+        if istek.tur in ("Tahsilat", "Ödeme"):
+            beklenen = "Satış" if istek.tur == "Tahsilat" else "Alış"
+            if not fatura or fatura["tur"] != beklenen:
+                if istek.fatura_id:
+                    raise HTTPException(400, f"{istek.tur} için {beklenen.lower()} faturası seçilmelidir.")
+            if not istek.cari_id:
+                raise HTTPException(400, "Tahsilat/ödeme için cari seçiniz.")
+        elif fatura:
+            raise HTTPException(400, "Yalnız fatura tahsilatı veya ödemesi faturaya bağlanabilir.")
+        if fatura and istek.cari_id != fatura["cari_id"]:
+            raise HTTPException(400, "Seçilen cari, faturanın carisiyle eşleşmiyor.")
+        siparis = d.q1("SELECT id FROM siparis WHERE id = ? AND durum != 'İptal'", (istek.siparis_id,)) if istek.siparis_id else None
+        if istek.siparis_id and not siparis:
+            raise HTTPException(400, "Sipariş bulunamadı veya iptal edilmiş.")
+        if fatura and fatura["siparis_id"] and istek.siparis_id not in (None, fatura["siparis_id"]):
+            raise HTTPException(400, "Ödeme/tahsilat sipariş bağlantısı faturayla uyuşmuyor.")
+        siparis_id = fatura["siparis_id"] if fatura and fatura["siparis_id"] else istek.siparis_id
+        if istek.tur == "Peşinat/Avans Tahsilatı" and (istek.yon != "Giriş" or not siparis_id):
+            raise HTTPException(400, "Sipariş avansı giriş yönünde bir siparişe bağlanmalıdır.")
+        if istek.tur in ("Tahsilat", "Ödeme") and not istek.cari_id:
+            raise HTTPException(400, "Tahsilat/ödeme için cari seçiniz.")
+        if fatura:
+            odenen = d.deger("SELECT SUM(tutar) FROM kasa_banka WHERE fatura_id = ? AND id != ?",
+                             (fatura["id"], hareket_id or 0), 0.0) or 0
+            kalan = yuvarla(fatura["net_tutar"] - (fatura["avans_mahsup"] or 0) - odenen)
+            if istek.tutar > kalan + 0.009:
+                raise HTTPException(400, f"Tutar, belgenin açık bakiyesini ({para(kalan)} TL) aşıyor.")
+        if istek.yon == "Çıkış":
+            bakiye = d.deger("SELECT SUM(CASE WHEN yon = 'Giriş' THEN tutar ELSE -tutar END) FROM kasa_banka "
+                             "WHERE hesap = ? AND id != ?", (istek.hesap, hareket_id or 0), 0.0) or 0
+            if istek.tutar > bakiye + 0.009 and not istek.bakiye_uyarisi_onaylandi:
+                raise HTTPException(409, f"{istek.hesap} bakiye {para(bakiye)} TL; yine de kaydetmek için onaylayınız.")
+        veri = {
+            "tarih": istek.tarih, "hesap": istek.hesap, "yon": istek.yon, "tur": istek.tur,
+            "tutar": istek.tutar, "hasilat_tutari": _kasa_hasilati(d, istek),
+            "cari_id": istek.cari_id, "fatura_id": istek.fatura_id, "siparis_id": siparis_id,
+            "belge_no": istek.belge_no.strip() or None, "aciklama": istek.aciklama.strip() or None,
+            "kaynak": None, "kaynak_id": None,
+        }
+        with d.islem():
+            if hareket_id:
+                if istek.surum is None:
+                    raise HTTPException(400, "Hareket sürümü gereklidir; kaydı yeniden açıp tekrar deneyiniz.")
+                d.cakisma_denetle("kasa_banka", hareket_id, istek.surum)
+                d.guncelle("kasa_banka", hareket_id, veri)
+            else:
+                hareket_id = d.ekle("kasa_banka", veri)
+            muhasebe.kasa_kaydi(hareket_id)
+        return {"id": hareket_id, "surum": d.son_islem_no(), "hasilat_tutari": veri["hasilat_tutari"]}
+
+    def _kasa_fatura_yetkisi(d, k, fatura_id: int | None):
+        if not fatura_id:
+            return
+        fatura = d.q1("SELECT tur FROM fatura WHERE id = ?", (fatura_id,))
+        if fatura:
+            gerek(k, FATURA_SAYFASI[fatura["tur"]], yaz=True)
+
+    @app.get("/api/kasa/{hareket_id:int}")
+    def kasa_hareket_detayi(hareket_id: int, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["kasa"])
+            hareket = d.q1("""SELECT k.*, c.unvan, f.belge_no fatura_no, s.siparis_no
+                              FROM kasa_banka k LEFT JOIN cari c ON c.id = k.cari_id
+                              LEFT JOIN fatura f ON f.id = k.fatura_id LEFT JOIN siparis s ON s.id = k.siparis_id
+                              WHERE k.id = ?""", (hareket_id,))
+            if not hareket:
+                raise HTTPException(404, "Kasa/banka hareketi bulunamadı.")
+            hareket["surum"] = d.son_islem_no()
+            kasa_yazabilir = etkin_yetki(b.k, MOBIL_MODULLER["kasa"]) == "y"
+            fatura = d.q1("SELECT tur FROM fatura WHERE id = ?", (hareket["fatura_id"],)) if hareket["fatura_id"] else None
+            fatura_yazabilir = not fatura or etkin_yetki(b.k, FATURA_SAYFASI[fatura["tur"]]) == "y"
+            hareket["duzenlenebilir"] = not hareket["kaynak"] and kasa_yazabilir and fatura_yazabilir
+            hareket["silinebilir"] = hareket["duzenlenebilir"]
+            return hareket
+
+    @app.post("/api/kasa")
+    def kasa_hareket_ekle(istek: KasaIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["kasa"], yaz=True)
+            with d.islem():
+                _kasa_fatura_yetkisi(d, b.k, istek.fatura_id)
+                return _kasa_hareketini_kaydet(d, istek)
+
+    @app.put("/api/kasa/{hareket_id:int}")
+    def kasa_hareket_guncelle(hareket_id: int, istek: KasaIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["kasa"], yaz=True)
+            with d.islem():
+                onceki = d.q1("SELECT fatura_id FROM kasa_banka WHERE id = ?", (hareket_id,))
+                if onceki:
+                    _kasa_fatura_yetkisi(d, b.k, onceki["fatura_id"])
+                _kasa_fatura_yetkisi(d, b.k, istek.fatura_id)
+                return _kasa_hareketini_kaydet(d, istek, hareket_id)
+
+    @app.delete("/api/kasa/{hareket_id:int}")
+    def kasa_hareket_sil(hareket_id: int, surum: int = Query(..., ge=0), b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, MOBIL_MODULLER["kasa"], yaz=True)
+            with d.islem():
+                hareket = d.q1("SELECT * FROM kasa_banka WHERE id = ?", (hareket_id,))
+                if not hareket:
+                    raise HTTPException(404, "Kasa/banka hareketi bulunamadı.")
+                if hareket["kaynak"]:
+                    raise HTTPException(400, f"Bu kayıt '{hareket['kaynak']}' modülünden oluşturuldu; ilgili modülden siliniz.")
+                _kasa_fatura_yetkisi(d, b.k, hareket["fatura_id"])
+                d.cakisma_denetle("kasa_banka", hareket_id, surum)
+                d.sil("kasa_banka", hareket_id)
+                muhasebe.fis_sil("KasaBanka", hareket_id)
+            return {"tamam": True}
 
     @app.get("/api/faturalar")
     def faturalar(tur: str = "Satış", yil: int = Query(default_factory=lambda: date.today().year),
@@ -2828,7 +3734,394 @@ def uygulama_olustur(kaynak=None, web_adresi: str | None = None, havuz=None) -> 
             gecerli = [s for s in satirlar if not s["iptal"]]
             return {"faturalar": satirlar, "matrah": yuvarla(sum(s["matrah"] or 0 for s in gecerli)),
                     "kdv": yuvarla(sum(s["kdv"] or 0 for s in gecerli)),
-                    "acik_bakiye": yuvarla(sum(s["kalan"] or 0 for s in gecerli))}
+                    "acik_bakiye": yuvarla(sum(s["kalan"] or 0 for s in gecerli)),
+                    "yazabilir": etkin_yetki(b.k, FATURA_SAYFASI[tur]) == "y"}
+
+    @app.get("/api/secenekler/fatura")
+    def fatura_secenekleri(tur: str = "Satış", b: Baglam = Depends(kullanici)):
+        if tur not in FATURA_SAYFASI:
+            raise HTTPException(400, "Fatura türü 'Satış' veya 'Alış' olmalıdır.")
+        with b as d:
+            gerek(b.k, FATURA_SAYFASI[tur])
+            if tur == "Satış":
+                cariler = d.q("SELECT id, unvan FROM cari WHERE aktif = 1 AND tur NOT IN ('Tedarikçi', 'Çiftçi (Müstahsil)') ORDER BY unvan")
+                kalemler = d.q("SELECT id, ad, birim, satis_fiyati fiyat, kdv_orani FROM urun WHERE aktif = 1 ORDER BY ad")
+            else:
+                cariler = d.q("SELECT id, unvan FROM cari WHERE aktif = 1 AND tur != 'Müşteri' ORDER BY unvan")
+                kalemler = d.q("SELECT id, ad, birim, 0 fiyat, kdv_orani FROM malzeme WHERE aktif = 1 ORDER BY ad")
+            return {
+                "cariler": cariler, "kalemler": kalemler,
+                "siparisler": d.q("SELECT id, siparis_no, cari_id, konu FROM siparis WHERE durum != 'İptal' ORDER BY id DESC LIMIT 500"),
+                "belge_turleri": M.SATIS_BELGE_TURLERI if tur == "Satış" else M.ALIS_BELGE_TURLERI,
+                "tevkifat_turleri": list(M.TEVKIFAT_ORANLARI),
+                "gider_turleri": list(M.GIDER_TURLERI),
+                "temin_usulleri": M.TEMIN_USULLERI,
+                "stopaj_turleri": list(M.STOPAJ_TURLERI),
+                "yazabilir": etkin_yetki(b.k, FATURA_SAYFASI[tur]) == "y",
+            }
+
+    def _fatura_kaydet(d, tur: str, istek: FaturaIstegi, fatura_id: int | None = None):
+        belge_turleri = M.SATIS_BELGE_TURLERI if tur == "Satış" else M.ALIS_BELGE_TURLERI
+        if istek.belge_turu not in belge_turleri:
+            raise HTTPException(400, "Belge türü geçersiz.")
+        if istek.tevkifat not in M.TEVKIFAT_ORANLARI:
+            raise HTTPException(400, "KDV tevkifat türü geçersiz.")
+        try:
+            parsed_tarih = date.fromisoformat(istek.tarih)
+        except ValueError:
+            raise HTTPException(400, "Belge tarihi YYYY-AA-GG biçiminde olmalıdır.") from None
+        if istek.tarih != parsed_tarih.isoformat():
+            raise HTTPException(400, "Belge tarihi YYYY-AA-GG biçiminde olmalıdır.")
+        if tur == "Alış":
+            if istek.gider_turu not in M.GIDER_TURLERI or istek.temin_usulu not in M.TEMIN_USULLERI:
+                raise HTTPException(400, "Gider türü veya temin usulü geçersiz.")
+            if istek.stopaj_turu not in M.STOPAJ_TURLERI:
+                raise HTTPException(400, "Stopaj türü geçersiz.")
+            stopaj_ref = M.STOPAJ_TURLERI[istek.stopaj_turu]
+            stopaj_orani = d.parametreler(int(istek.tarih[:4])).get(stopaj_ref, 0) if isinstance(stopaj_ref, str) else stopaj_ref
+        else:
+            stopaj_orani = 0
+        cari = d.q1("SELECT * FROM cari WHERE id = ? AND aktif = 1", (istek.cari_id,))
+        if not cari:
+            raise HTTPException(400, "Cari bulunamadı veya pasif.")
+        if tur == "Satış" and cari["tur"] in ("Tedarikçi", "Çiftçi (Müstahsil)"):
+            raise HTTPException(400, "Satış belgesi için müşteri türünde cari seçiniz.")
+        if tur == "Alış" and cari["tur"] == "Müşteri":
+            raise HTTPException(400, "Alış belgesi için tedarikçi veya üretici türünde cari seçiniz.")
+        siparis = d.q1("SELECT * FROM siparis WHERE id = ? AND durum != 'İptal'", (istek.siparis_id,)) if istek.siparis_id else None
+        if istek.siparis_id and not siparis:
+            raise HTTPException(400, "Sipariş bulunamadı veya iptal edilmiş.")
+        if siparis and siparis["cari_id"] != istek.cari_id:
+            raise HTTPException(400, "Fatura carisi sipariş carisiyle aynı olmalıdır.")
+        mevcut = d.q1("SELECT * FROM fatura WHERE id = ?", (fatura_id,)) if fatura_id else None
+        if fatura_id and not mevcut:
+            raise HTTPException(404, "Fatura bulunamadı.")
+        if mevcut and mevcut["iptal"]:
+            raise HTTPException(400, "İptal edilmiş belge düzenlenemez.")
+        if mevcut and d.deger("SELECT COUNT(*) FROM kasa_banka WHERE fatura_id = ?", (fatura_id,)):
+            raise HTTPException(400, "Belgeye bağlı tahsilat/ödeme kaydı var. Önce o kayıtları siliniz.")
+        no = istek.belge_no.strip() or None
+        if no:
+            tekrar_sql = ("SELECT id FROM fatura WHERE tur = ? AND belge_no = ? AND iptal = 0 AND id != ? "
+                          "AND substr(tarih, 1, 4) = ?") if tur == "Satış" else (
+                          "SELECT id FROM fatura WHERE tur = ? AND belge_no = ? AND iptal = 0 AND id != ? AND cari_id = ?")
+            tekrar_parametreleri = ((tur, no, fatura_id or 0, istek.tarih[:4]) if tur == "Satış"
+                                    else (tur, no, fatura_id or 0, istek.cari_id))
+            if d.q1(tekrar_sql, tekrar_parametreleri):
+                raise HTTPException(400, "Bu belge numarası bu cari/yıl için zaten kayıtlı.")
+
+        p = d.parametreler(int(istek.tarih[:4]))
+        kalemler = []
+        for i, giris in enumerate(istek.kalemler, 1):
+            kalem = giris.model_dump()
+            kalem["aciklama"] = kalem["aciklama"].strip() or None
+            if tur == "Satış":
+                if kalem["malzeme_id"] is not None:
+                    raise HTTPException(400, f"{i}. satış kaleminde stok malzemesi seçilemez.")
+                if kalem["urun_id"] and not d.q1("SELECT id FROM urun WHERE id = ? AND aktif = 1", (kalem["urun_id"],)):
+                    raise HTTPException(400, f"{i}. kalemde ürün bulunamadı veya pasif.")
+                kalem["malzeme_id"] = None
+            else:
+                if kalem["urun_id"] is not None:
+                    raise HTTPException(400, f"{i}. alış kaleminde ürün seçilemez.")
+                if kalem["malzeme_id"] and not d.q1("SELECT id FROM malzeme WHERE id = ? AND aktif = 1",
+                                                      (kalem["malzeme_id"],)):
+                    raise HTTPException(400, f"{i}. kalemde malzeme bulunamadı veya pasif.")
+                kalem["urun_id"] = None
+            kalem["iskonto"] = (yuvarla(kalem["iskonto"]) if kalem["iskonto"] is not None else
+                                yuvarla(kalem["miktar"] * kalem["birim_fiyat"] * kalem["iskonto_orani"]))
+            kalem["tutar"] = kalem_tutari(kalem)[2]
+            kalem["kdv"] = yuvarla(kalem["tutar"] * kalem["kdv_orani"])
+            kalemler.append(kalem)
+        hatalar = kalem_hatalari(kalemler)
+        if hatalar:
+            raise HTTPException(400, "\n".join(hatalar))
+        toplam = belge_toplami(kalemler, M.TEVKIFAT_ORANLARI[istek.tevkifat], stopaj_orani)
+        if istek.kontrol_toplam is not None and abs(istek.kontrol_toplam - toplam.genel_toplam) > 0.01:
+            raise HTTPException(400, f"Hesaplanan genel toplam ({para(toplam.genel_toplam)} TL) kontrol tutarından "
+                                      f"({para(istek.kontrol_toplam)} TL) farklı.")
+        kurum = d.kurum()
+        uyarilar = []
+        if tur == "Alış" and istek.temin_usulu == "Doğrudan Temin":
+            limit = p["dogrudan_temin_buyuksehir" if kurum.get("buyuksehir") else "dogrudan_temin_diger"]
+            if toplam.matrah > limit:
+                raise HTTPException(400, f"Matrah doğrudan temin limitini ({para(limit)} TL) aşıyor; başka temin usulü seçiniz.")
+            uyarilar.append("Doğrudan temin dosyasında onay belgesi, piyasa fiyat araştırma tutanağı ve yasaklılık teyidi bulunmalıdır.")
+        if tur == "Satış":
+            if cari.get("kamu_kurumu") and istek.tevkifat == "Yok":
+                uyarilar.append("Kamu kurumlarına yapılan bazı teslimlerde KDV tevkifatı uygulanır; işin niteliğini kontrol ediniz.")
+            for kalem in kalemler:
+                urun = d.q1("SELECT ad, satis_fiyati FROM urun WHERE id = ?", (kalem["urun_id"],)) if kalem["urun_id"] else None
+                net_birim = yuvarla(kalem["tutar"] / kalem["miktar"], 4) if kalem["miktar"] else 0
+                if urun and (urun["satis_fiyati"] or 0) > 0 and net_birim + 0.005 < urun["satis_fiyati"]:
+                    uyarilar.append(f"'{urun['ad']}' iskonto sonrası fiyatı tespit edilen satış fiyatının altında.")
+            if istek.belge_turu == "Diğer":
+                uyarilar.append("Satışlar fatura veya nihai tüketiciye ÖKC fişiyle belgelendirilmelidir.")
+        else:
+            if istek.belge_turu.startswith("Müstahsil"):
+                if cari["tur"] != "Çiftçi (Müstahsil)":
+                    uyarilar.append("Müstahsil makbuzu yalnızca vergiden muaf çiftçilerden yapılan alımlarda düzenlenir.")
+                if toplam.kdv:
+                    uyarilar.append("Müstahsil makbuzunda KDV hesaplanmamalıdır.")
+                if not stopaj_orani:
+                    raise HTTPException(400, "Müstahsil makbuzunda gelir vergisi stopaj türü seçilmelidir.")
+            elif istek.belge_turu.startswith("Perakende"):
+                if toplam.kdv:
+                    raise HTTPException(400, "Perakende satış fişindeki KDV indirim konusu yapılamaz; kalem KDV oranını sıfır giriniz.")
+                uyarilar.append("Perakende satış fişi yalnızca fatura düzenleme sınırının altındaki küçük alımlarda kabul edilebilir.")
+            elif istek.belge_turu == "Diğer":
+                uyarilar.append("Alım belgelerinin VUK md.228-238'de sayılan belgelerden olduğunu doğrulayınız.")
+            if M.GIDER_TURLERI[istek.gider_turu][1] and any(not kalem["malzeme_id"] for kalem in kalemler):
+                uyarilar.append("Stoğa alınacak gider türünde stok kartı seçilmeyen kalemler stoğa eklenmez.")
+        avans = 0.0
+        if tur == "Satış" and istek.avans_mahsup:
+            if not siparis:
+                raise HTTPException(400, "Sipariş avansı mahsubu için sipariş seçilmelidir.")
+            alinan = d.deger("SELECT SUM(tutar) FROM kasa_banka WHERE siparis_id = ? AND tur = 'Peşinat/Avans Tahsilatı'",
+                             (siparis["id"],), 0.0) or 0
+            onceki = d.deger("SELECT SUM(avans_mahsup) FROM fatura WHERE siparis_id = ? AND iptal = 0 AND id != ?",
+                             (siparis["id"], fatura_id or 0), 0.0) or 0
+            if istek.avans_mahsup > yuvarla(alinan - onceki) + 0.005:
+                raise HTTPException(400, "Mahsup tutarı sipariş için tahsil edilmiş ve kullanılmamış avansı aşıyor.")
+            if istek.avans_mahsup > toplam.net_tutar + 0.005:
+                raise HTTPException(400, "Avans mahsubu faturanın net tutarını aşamaz.")
+            avans = istek.avans_mahsup
+        if tur == "Alış" and istek.avans_mahsup:
+            raise HTTPException(400, "Avans mahsubu yalnızca satış faturalarında kullanılabilir.")
+
+        if no is None:
+            no = d.sonraki_no("satis" if tur == "Satış" else "alis", int(istek.tarih[:4]),
+                              "SF" if tur == "Satış" else "AF")
+        veri = {
+            "tur": tur, "belge_turu": istek.belge_turu, "belge_no": no, "tarih": istek.tarih,
+            "cari_id": istek.cari_id, "siparis_id": istek.siparis_id,
+            "aciklama": istek.aciklama.strip() or None, "iskonto": toplam.iskonto, "matrah": toplam.matrah,
+            "kdv": toplam.kdv, "tevkifat": istek.tevkifat, "tevkif_kdv": toplam.tevkif_kdv,
+            "stopaj_turu": istek.stopaj_turu if tur == "Alış" else "Yok",
+            "stopaj_orani": stopaj_orani, "stopaj": toplam.stopaj,
+            "genel_toplam": toplam.genel_toplam, "net_tutar": toplam.net_tutar,
+            "avans_mahsup": avans, "gider_turu": istek.gider_turu if tur == "Alış" else None,
+            "temin_usulu": istek.temin_usulu if tur == "Alış" else None,
+        }
+        with d.islem():
+            if fatura_id:
+                if istek.surum is None:
+                    raise HTTPException(400, "Fatura sürümü gereklidir; kaydı yeniden açıp tekrar deneyiniz.")
+                d.cakisma_denetle("fatura", fatura_id, istek.surum)
+                d.guncelle("fatura", fatura_id, veri)
+            else:
+                fatura_id = d.ekle("fatura", veri)
+            d.ex("DELETE FROM fatura_kalem WHERE fatura_id = ?", (fatura_id,))
+            d.ex("DELETE FROM stok_hareket WHERE kaynak = 'Fatura' AND kaynak_id = ?", (fatura_id,))
+            for kalem in kalemler:
+                kalem["fatura_id"] = fatura_id
+                d.ekle("fatura_kalem", kalem, log=False)
+                if tur == "Satış" and kalem.get("urun_id"):
+                    mamul = d.deger("SELECT mamul_malzeme_id FROM urun WHERE id = ?", (kalem["urun_id"],), None)
+                    if mamul:
+                        d.ekle("stok_hareket", {
+                            "tarih": istek.tarih, "malzeme_id": mamul, "yon": "Çıkış", "miktar": kalem["miktar"],
+                            "birim_fiyat": muhasebe.ortalama_maliyet(mamul, istek.tarih), "kaynak": "Fatura",
+                            "kaynak_id": fatura_id, "siparis_id": istek.siparis_id, "aciklama": f"Satış {no}",
+                        }, log=False)
+                elif tur == "Alış" and kalem.get("malzeme_id") and M.GIDER_TURLERI[istek.gider_turu][1]:
+                    d.ekle("stok_hareket", {
+                        "tarih": istek.tarih, "malzeme_id": kalem["malzeme_id"], "yon": "Giriş",
+                        "miktar": kalem["miktar"], "birim_fiyat": yuvarla(kalem["tutar"] / kalem["miktar"], 4),
+                        "kaynak": "Fatura", "kaynak_id": fatura_id, "siparis_id": istek.siparis_id,
+                        "aciklama": f"Alış {no}",
+                    }, log=False)
+            muhasebe.fatura_kaydi(fatura_id)
+        return {"id": fatura_id, "belge_no": no, "matrah": toplam.matrah, "kdv": toplam.kdv,
+                "genel_toplam": toplam.genel_toplam, "net_tutar": yuvarla(toplam.net_tutar - avans),
+                "surum": d.son_islem_no(), "uyarilar": uyarilar}
+
+    @app.get("/api/faturalar/{fatura_id:int}")
+    def fatura_detayi(fatura_id: int, b: Baglam = Depends(kullanici)):
+        with b as d:
+            f = d.q1("""SELECT f.*, c.unvan, s.siparis_no,
+                                f.net_tutar - COALESCE(f.avans_mahsup, 0) -
+                                COALESCE((SELECT SUM(tutar) FROM kasa_banka k WHERE k.fatura_id = f.id), 0) kalan
+                         FROM fatura f LEFT JOIN cari c ON c.id = f.cari_id
+                         LEFT JOIN siparis s ON s.id = f.siparis_id WHERE f.id = ?""", (fatura_id,))
+            if not f:
+                raise HTTPException(404, "Fatura bulunamadı.")
+            gerek(b.k, FATURA_SAYFASI[f["tur"]])
+            f["kalemler"] = d.q("SELECT * FROM fatura_kalem WHERE fatura_id = ? ORDER BY id", (fatura_id,))
+            f["odemeler"] = d.q("SELECT id, tarih, hesap, tutar, belge_no, aciklama FROM kasa_banka WHERE fatura_id = ? "
+                                "ORDER BY tarih, id", (fatura_id,))
+            f["surum"] = d.son_islem_no()
+            f["duzenlenebilir"] = (not f["iptal"] and not f["odemeler"]
+                                   and etkin_yetki(b.k, FATURA_SAYFASI[f["tur"]]) == "y")
+            f["iptal_edilebilir"] = (not f["iptal"] and not f["odemeler"]
+                                     and etkin_yetki(b.k, FATURA_SAYFASI[f["tur"]]) == "y")
+            f["odeme_yapilabilir"] = (not f["iptal"] and f["kalan"] > 0.009
+                                      and etkin_yetki(b.k, FATURA_SAYFASI[f["tur"]]) == "y"
+                                      and etkin_yetki(b.k, MOBIL_MODULLER["kasa"]) == "y")
+            f["dogrudan_temin_belgesi"] = (f["tur"] == "Alış" and f["temin_usulu"] == "Doğrudan Temin")
+            return f
+
+    @app.get("/api/faturalar/{fatura_id:int}/dogrudan-temin")
+    def dogrudan_temin_onbilgisi(fatura_id: int, b: Baglam = Depends(kullanici)):
+        with b as d:
+            f = d.q1("""SELECT f.*, c.unvan FROM fatura f LEFT JOIN cari c ON c.id = f.cari_id
+                        WHERE f.id = ?""", (fatura_id,))
+            if not f:
+                raise HTTPException(404, "Alış belgesi bulunamadı.")
+            gerek(b.k, FATURA_SAYFASI[f["tur"]])
+            if f["tur"] != "Alış" or f["temin_usulu"] != "Doğrudan Temin" or f["iptal"]:
+                raise HTTPException(400, "Yalnız aktif doğrudan temin alış belgeleri için paket hazırlanabilir.")
+            kalemler = d.q("""SELECT k.aciklama, k.miktar, k.birim, m.ad FROM fatura_kalem k
+                              LEFT JOIN malzeme m ON m.id = k.malzeme_id WHERE k.fatura_id = ? ORDER BY k.id""",
+                           (fatura_id,))
+            return {
+                "fatura_id": fatura_id, "konu": f["aciklama"] or "",
+                "tarih": f["tarih"], "sayi": f["belge_no"] or "", "gider_turu": f["gider_turu"],
+                "kalemler": [{"ad": " - ".join(x for x in (r["ad"], r["aciklama"]) if x) or "Mal / hizmet",
+                              "miktar": r["miktar"] or 1, "birim": r["birim"] or ""} for r in kalemler],
+                "firmalar": [{"ad": f["unvan"] or "", "tutar": f["matrah"] or 0}],
+                "yaklasik_maliyet": f["matrah"] or 0, "teslim_yeri": "İşletme atölyesine",
+                "gider_turleri": list(M.GIDER_TURLERI),
+            }
+
+    @app.post("/api/belgeler/dogrudan-temin")
+    def dogrudan_temin_belgeleri(istek: DogrudanTeminIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            gerek(b.k, FATURA_SAYFASI["Alış"], yaz=True)
+            try:
+                tarih = date.fromisoformat(istek.tarih)
+            except ValueError:
+                raise HTTPException(400, "Belge tarihi YYYY-AA-GG biçiminde olmalıdır.") from None
+            if tarih.isoformat() != istek.tarih:
+                raise HTTPException(400, "Belge tarihi YYYY-AA-GG biçiminde olmalıdır.")
+            if istek.gider_turu not in M.GIDER_TURLERI:
+                raise HTTPException(400, "Gider türü geçersiz.")
+            if istek.fatura_id:
+                f = d.q1("SELECT tur, temin_usulu, iptal FROM fatura WHERE id = ?", (istek.fatura_id,))
+                if not f or f["tur"] != "Alış" or f["temin_usulu"] != "Doğrudan Temin" or f["iptal"]:
+                    raise HTTPException(400, "Seçilen alış belgesi aktif bir doğrudan temin kaydı değil.")
+            p = d.parametreler(tarih.year)
+            limit = p["dogrudan_temin_buyuksehir" if d.kurum().get("buyuksehir") else "dogrudan_temin_diger"]
+            firmalar = [x.model_dump() | {"ad": x.ad.strip()} for x in istek.firmalar]
+            if any(not x["ad"] for x in firmalar):
+                raise HTTPException(400, "Firma adları boş bırakılamaz.")
+            en_uygun = min((x["tutar"] for x in firmalar), default=istek.yaklasik_maliyet)
+            uyarilar = []
+            if len(firmalar) < 3:
+                uyarilar.append("Piyasa araştırmasında en az üç firmadan teklif alınması önerilir.")
+            if max(en_uygun, istek.yaklasik_maliyet) > limit:
+                uyarilar.append(f"Yaklaşık maliyet doğrudan temin limitini ({para(limit)} TL) aşıyor; ihale usulü gerekir.")
+            veri = {
+                "konu": istek.konu.strip(), "tarih": istek.tarih, "sayi": istek.sayi.strip(),
+                "gider_turu": istek.gider_turu,
+                "kalemler": [x.model_dump() for x in istek.kalemler],
+                "firmalar": firmalar, "gorevliler": [x.strip() for x in istek.gorevliler if x.strip()],
+                "yaklasik_maliyet": istek.yaklasik_maliyet, "teslim_yeri": istek.teslim_yeri.strip(),
+            }
+            with tempfile.TemporaryDirectory(prefix="dose-dogrudan-temin-") as dizin:
+                yol = belgeler.dogrudan_temin_dosyasi(
+                    Path(dizin) / f"Dogrudan_Temin_{istek.tarih}.pdf", veri)
+                icerik = yol.read_bytes()
+                dosya_adi = yol.name
+            d.log("Doğrudan temin belge paketi oluşturma", "fatura", istek.fatura_id,
+                  detay=f"{istek.tarih} / {istek.konu}")
+            return {"dosya_adi": dosya_adi, "icerik": base64.b64encode(icerik).decode("ascii"),
+                    "uyarilar": uyarilar}
+
+    @app.post("/api/faturalar")
+    def fatura_ekle(istek: FaturaIstegi, tur: str = Query("Satış"), b: Baglam = Depends(kullanici)):
+        if tur not in FATURA_SAYFASI:
+            raise HTTPException(400, "Fatura türü 'Satış' veya 'Alış' olmalıdır.")
+        with b as d:
+            gerek(b.k, FATURA_SAYFASI[tur], yaz=True)
+            return _fatura_kaydet(d, tur, istek)
+
+    @app.put("/api/faturalar/{fatura_id:int}")
+    def fatura_guncelle(fatura_id: int, istek: FaturaIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            f = d.q1("SELECT tur FROM fatura WHERE id = ?", (fatura_id,))
+            if not f:
+                raise HTTPException(404, "Fatura bulunamadı.")
+            gerek(b.k, FATURA_SAYFASI[f["tur"]], yaz=True)
+            return _fatura_kaydet(d, f["tur"], istek, fatura_id)
+
+    @app.delete("/api/faturalar/{fatura_id:int}")
+    def fatura_iptal(fatura_id: int, surum: int = Query(..., ge=0), b: Baglam = Depends(kullanici)):
+        with b as d:
+            f = d.q1("SELECT * FROM fatura WHERE id = ?", (fatura_id,))
+            if not f:
+                raise HTTPException(404, "Fatura bulunamadı.")
+            gerek(b.k, FATURA_SAYFASI[f["tur"]], yaz=True)
+            if f["iptal"]:
+                raise HTTPException(400, "Fatura zaten iptal edilmiş.")
+            if d.deger("SELECT COUNT(*) FROM kasa_banka WHERE fatura_id = ?", (fatura_id,)):
+                raise HTTPException(400, "Belgeye bağlı tahsilat/ödeme kaydı var. Önce o kayıtları siliniz.")
+            d.cakisma_denetle("fatura", fatura_id, surum)
+            with d.islem():
+                d.guncelle("fatura", fatura_id, {"iptal": 1})
+                d.ex("DELETE FROM stok_hareket WHERE kaynak = 'Fatura' AND kaynak_id = ?", (fatura_id,))
+                muhasebe.fatura_kaydi(fatura_id)
+            return {"tamam": True}
+
+    @app.post("/api/faturalar/{fatura_id}/odeme")
+    def fatura_odeme(fatura_id: int, istek: FaturaOdemeIstegi, b: Baglam = Depends(kullanici)):
+        with b as d:
+            f = d.q1("SELECT * FROM fatura WHERE id = ?", (fatura_id,))
+            if not f:
+                raise HTTPException(404, "Fatura bulunamadı.")
+            gerek(b.k, FATURA_SAYFASI[f["tur"]], yaz=True)
+            gerek(b.k, MOBIL_MODULLER["kasa"], yaz=True)
+            if f["iptal"]:
+                raise HTTPException(400, "İptal edilmiş faturaya ödeme/tahsilat kaydedilemez.")
+            try:
+                tarih = date.fromisoformat(istek.tarih)
+            except ValueError:
+                raise HTTPException(400, "Ödeme tarihi YYYY-AA-GG biçiminde olmalıdır.") from None
+            if tarih.isoformat() != istek.tarih:
+                raise HTTPException(400, "Ödeme tarihi YYYY-AA-GG biçiminde olmalıdır.")
+            kalan = muhasebe.fatura_kalan(fatura_id)
+            if istek.tutar > kalan + 0.005:
+                raise HTTPException(400, f"Ödeme/tahsilat açık bakiyeyi ({para(kalan)} TL) aşamaz.")
+            with d.islem():
+                hareket_id = d.ekle("kasa_banka", {
+                    "tarih": istek.tarih, "hesap": istek.hesap,
+                    "yon": "Giriş" if f["tur"] == "Satış" else "Çıkış",
+                    "tur": "Tahsilat" if f["tur"] == "Satış" else "Ödeme",
+                    "tutar": istek.tutar,
+                    "hasilat_tutari": (yuvarla(istek.tutar * f["matrah"] / f["net_tutar"])
+                                       if f["tur"] == "Satış" and f["net_tutar"] else 0),
+                    "cari_id": f["cari_id"], "fatura_id": fatura_id,
+                    "siparis_id": f["siparis_id"], "belge_no": istek.belge_no.strip() or None,
+                    "aciklama": istek.aciklama.strip() or f"{f['belge_no'] or ''} nolu belge",
+                })
+                muhasebe.kasa_kaydi(hareket_id)
+            return {"id": hareket_id, "kalan": yuvarla(kalan - istek.tutar)}
+
+    @app.get("/api/faturalar/disa-aktar")
+    def faturalari_disa_aktar(tur: str = Query("Satış"), yil: int = Query(default_factory=lambda: date.today().year),
+                              ay: int = Query(0, ge=0, le=12), b: Baglam = Depends(kullanici)):
+        if tur not in FATURA_SAYFASI:
+            raise HTTPException(400, "Fatura türü 'Satış' veya 'Alış' olmalıdır.")
+        with b as d:
+            gerek(b.k, FATURA_SAYFASI[tur])
+            donem = f"{yil}" + (f"-{ay:02d}" if ay else "")
+            rows = d.q("""SELECT f.tarih, f.belge_turu, f.belge_no, c.unvan, s.siparis_no, f.iskonto, f.matrah, f.kdv,
+                                 f.tevkif_kdv, f.stopaj, f.genel_toplam, f.avans_mahsup, f.net_tutar, f.iptal
+                          FROM fatura f LEFT JOIN cari c ON c.id = f.cari_id LEFT JOIN siparis s ON s.id = f.siparis_id
+                          WHERE f.tur = ? AND f.tarih LIKE ? ORDER BY f.tarih DESC, f.id DESC LIMIT 2000""",
+                         (tur, donem + "%"))
+            with tempfile.TemporaryDirectory(prefix="dose-fatura-") as dizin:
+                yol = excel.disa_aktar(
+                    Path(dizin) / f"{'Satis' if tur == 'Satış' else 'Alis'}_{donem}.xlsx",
+                    [(tur + " faturaları", ["Tarih", "Belge Türü", "Belge No", "Cari", "Sipariş", "İskonto", "Matrah",
+                                            "KDV", "Tevkif KDV", "Stopaj", "Genel Toplam", "Avans Mahsubu", "Net Tutar", "İptal"],
+                      [[r["tarih"], r["belge_turu"], r["belge_no"] or "", r["unvan"] or "", r["siparis_no"] or "",
+                        r["iskonto"] or 0, r["matrah"] or 0, r["kdv"] or 0, r["tevkif_kdv"] or 0, r["stopaj"] or 0,
+                        r["genel_toplam"] or 0, r["avans_mahsup"] or 0, r["net_tutar"] or 0,
+                        "Evet" if r["iptal"] else "Hayır"] for r in rows])])
+                icerik = yol.read_bytes()
+            d.log("Fatura dışa aktarma", "fatura", detay=f"{tur} {donem}")
+            return {"dosya_adi": yol.name, "icerik": base64.b64encode(icerik).decode("ascii")}
 
     # ------------------------------------------------------------ resmi yazılar ve toplu belgeler
     @app.get("/api/belgeler")

@@ -29,6 +29,38 @@ SEVIYE_IKON = {"hata": ft.Icons.ERROR, "uyari": ft.Icons.WARNING_AMBER, "bilgi":
 GUN_RENK = {"ogretim": ft.Colors.GREY_800, "tatil": ft.Colors.BLUE_700, "pazar": ft.Colors.RED_400, "bayram": ft.Colors.RED_700}
 BELGE_IKON = {"Sipariş": ft.Icons.ASSIGNMENT, "Fazla Çalışma": ft.Icons.SCHEDULE, "Parça Başı": ft.Icons.GROUPS,
               "Yıl Sonu": ft.Icons.EVENT_AVAILABLE}
+SAYFA_YARDIM_ESLEME = {
+    "bugün ne yapmalıyım?": "Bugün Ne Yapmalıyım?",
+    "nasıl yaparım? (adım adım)": "Nasıl Yaparım? (Adım Adım)",
+    "mevzuat uyum denetimi": "Mevzuat Uyum Denetimi",
+    "gösterge paneli": "Gösterge Paneli",
+    "özet": "Gösterge Paneli", "genel bakış": "Gösterge Paneli",
+    "onaylar": "Onay Bekleyenler", "işler": "Siparişler / İş Emirleri", "iş emirleri": "Siparişler / İş Emirleri",
+    "siparişler / iş emirleri": "Siparişler / İş Emirleri",
+    "stok / ambar": "Stok Durumu ve Hareketleri", "stok durumu": "Stok Durumu ve Hareketleri",
+    "stok girişi": "Stok Durumu ve Hareketleri", "stok çıkışı": "Stok Durumu ve Hareketleri",
+    "kasa / banka": "Kasa / Banka", "satış faturaları": "Satış Faturaları",
+    "alış / gider belgeleri": "Alış / Gider Belgeleri",
+    "doğrudan temin belgeleri": "Alış / Gider Belgeleri",
+    "tahsilat gir": "Satış Faturaları", "ödeme gir": "Alış / Gider Belgeleri",
+    "mevzuat rehberi": "Mevzuat Rehberi",
+    "kurum ve görevliler": "Kurum ve Görevliler", "mevzuat parametreleri": "Mevzuat Parametreleri",
+    "bölüm / alan / atölyeler": "Bölüm / Alan / Atölyeler", "personel": "Personel",
+    "öğrenciler": "Öğrenciler", "cari hesaplar": "Cari Hesaplar",
+    "denetim formları": "Mevzuat Uyum Denetimi",
+    "malzeme kartları": "Malzeme / Stok Kartları", "malzeme / stok kartları": "Malzeme / Stok Kartları",
+    "ürün / hizmet ve maliyet": "Ürün / Hizmet ve Maliyet", "maliyet analizi": "Ürün / Hizmet ve Maliyet",
+    "siparişler": "Siparişler / İş Emirleri", "siparişi faturala": "Siparişler / İş Emirleri",
+    "iş talebini düzenle": "Siparişler / İş Emirleri", "yeni iş talebi": "Siparişler / İş Emirleri",
+    "parça başı": "Parça Başı Ücret", "fazla çalışma": "Fazla Çalışma Ücreti",
+    "yıl sonu kârı ve ütp": "Yıl Sonu Kârı ve ÜTP", "hazine payı / shçek": "Hazine Payı / SHÇEK",
+    "kdv / muhtasar": "KDV / Muhtasar Özeti", "muhtasar ayrıntısı": "KDV / Muhtasar Özeti",
+    "muhasebe": "Yevmiye / Mizan", "yevmiye / mizan": "Yevmiye / Mizan",
+    "raporlar": "Raporlar", "resmi yazılar / belgeler": "Resmi Yazılar / Belgeler",
+    "kullanıcılar": "Kullanıcılar", "yedekleme": "Yedekleme / İşlem Kaydı",
+    "yedekleme / işlem kaydı": "Yedekleme / İşlem Kaydı",
+    "işlem kaydı": "Yedekleme / İşlem Kaydı",
+}
 
 
 # ---------------------------------------------------------------- biçimlendirme
@@ -181,14 +213,59 @@ class Uygulama:
             self.page.views.pop()
             self.page.update()
 
-    def gorunum(self, baslik_metni: str, kontroller: list, fab=None, eylemler=None) -> ft.View:
+    def gorunum(self, baslik_metni: str, kontroller: list, fab=None, eylemler=None, yardim: str | None = None) -> ft.View:
         halka = ft.ProgressRing(width=18, height=18, stroke_width=2, visible=False)
+        yardim_anahtari = yardim or self._sayfa_yardim_anahtari(baslik_metni)
+        eylemler = [*(eylemler or [])]
+        if yardim_anahtari:
+            eylemler.append(self._sayfa_yardim_dugmesi(yardim_anahtari))
         v = ft.View(route=f"/s{len(self.page.views)}", padding=0, floating_action_button=fab,
-                    appbar=ft.AppBar(title=ft.Text(baslik_metni), actions=[*(eylemler or []),
+                    appbar=ft.AppBar(title=ft.Text(baslik_metni), actions=[*eylemler,
                                                                          ft.Container(halka, padding=ft.Padding.only(right=16))]),
                     controls=[ft.SafeArea(ft.ListView(kontroller, padding=12, spacing=10, expand=True), expand=True)])
         v.data = {"halka": halka}
         return v
+
+    def _sayfa_yardim_anahtari(self, baslik_metni: str) -> str | None:
+        baslik = " ".join(baslik_metni.casefold().split())
+        return next((yardim for anahtar, yardim in SAYFA_YARDIM_ESLEME.items()
+                     if baslik == anahtar or baslik.startswith(anahtar + " ")),
+                    None)
+
+    def _sayfa_yardim_dugmesi(self, ad: str):
+        return ft.IconButton(
+            icon=ft.Icons.HELP_OUTLINE, tooltip="Bu sayfa hakkında yardım",
+            on_click=lambda e, sayfa=ad: self.page.run_task(self.sayfa_yardimi, sayfa))
+
+    async def sayfa_yardimi(self, ad: str):
+        veri = await self.cagir(self.api.get, "/kilavuz/sayfa", ad=ad)
+        if veri is None:
+            return
+        satirlar = [
+            ft.Text("Bu sayfa ne işe yarar?", weight=ft.FontWeight.BOLD),
+            ft.Text(veri["ne"], selectable=True),
+        ]
+        if veri["nasil"]:
+            satirlar.append(ft.Text("Nasıl kullanılır?", weight=ft.FontWeight.BOLD))
+            satirlar.extend(ft.Text(f"• {metin}", selectable=True) for metin in veri["nasil"])
+        if veri["dikkat"]:
+            satirlar.append(ft.Text("Dikkat", weight=ft.FontWeight.BOLD, color=ft.Colors.RED_700))
+            satirlar.extend(ft.Text(f"• {metin}", selectable=True, color=ft.Colors.RED_700)
+                            for metin in veri["dikkat"])
+
+        async def rehbere_git():
+            self.page.pop_dialog()
+            await self.kilavuz_ekrani(veri["rehber"]["kod"])
+
+        eylemler = [ft.TextButton("Kapat", on_click=lambda e: self.page.pop_dialog())]
+        if veri["rehber"]:
+            eylemler.insert(0, ft.FilledButton(
+                f"{veri['rehber']['ikon']} Adım adım rehber",
+                on_click=lambda e: self.page.run_task(rehbere_git)))
+        self.page.show_dialog(ft.AlertDialog(
+            title=ft.Text(f"Yardım — {veri['ad']}"),
+            content=ft.Column(satirlar, tight=True, scroll=ft.ScrollMode.AUTO, width=520),
+            scrollable=True, actions=eylemler))
 
     def ac(self, v: ft.View):
         self.page.views.append(v)
@@ -282,6 +359,8 @@ class Uygulama:
         self.b_gelismis.visible = not self.web
         self.l_hata = ft.Text(mesaj, color=ft.Colors.RED_800, selectable=True)
         self.b_giris = ft.FilledButton("Giriş yap", icon=ft.Icons.LOGIN, on_click=self.giris_yap, height=52)
+        self.b_lisans = ft.OutlinedButton("Lisansı görüntüle / etkinleştir", icon=ft.Icons.VERIFIED_OUTLINED,
+                                          on_click=self._lisans_dialogu)
         logo = ft.Image(src="logo.png", width=132, height=72, fit=ft.BoxFit.CONTAIN,
                         error_content=ft.Icon(ft.Icons.ACCOUNT_BALANCE, size=48, color=ft.Colors.TEAL_700))
         self.hata_alani = ft.Container(self.l_hata, padding=12, bgcolor=ft.Colors.RED_50,
@@ -297,7 +376,7 @@ class Uygulama:
                         color=ft.Colors.BLUE_GREY_600, text_align=ft.TextAlign.CENTER),
                 ft.Divider(height=12, color=ft.Colors.GREY_200),
                 self.t_kurum, self.t_kullanici, self.t_sifre,
-                self.b_gelismis, self.t_adres, self.c_sertifika, self.hata_alani, self.b_giris,
+                self.b_gelismis, self.t_adres, self.c_sertifika, self.hata_alani, self.b_giris, self.b_lisans,
             ], horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=14),
             width=kart_genisligi, padding=24, bgcolor=ft.Colors.WHITE, border_radius=22,
             border=ft.Border.all(1, ft.Colors.GREY_200),
@@ -319,6 +398,113 @@ class Uygulama:
         self.c_sertifika.visible = True
         self.b_gelismis.visible = False
         self.page.update()
+
+    async def _lisans_dialogu(self, e=None):
+        kurum_kodu = ft.TextField(
+            label="Kurum kodu", value=self.t_kurum.value or "", keyboard_type=ft.KeyboardType.NUMBER,
+            autofocus=True)
+        anahtar = ft.TextField(
+            label="Lisans anahtarı", hint_text="DOSE1.… anahtarını yapıştırın veya .lic dosyası seçin",
+            multiline=True, min_lines=3, max_lines=5)
+        durum = ft.Text("Lisans bilgisi sunucudan okunuyor…", selectable=True)
+
+        async def istemci_olustur():
+            kod = "".join((kurum_kodu.value or "").split())
+            if not kod.isdigit() or not 5 <= len(kod) <= 8:
+                durum.value = "Kurum kodu 5–8 rakam olmalıdır."
+                self.page.update()
+                return None
+            try:
+                adres = await asyncio.to_thread(self._adres_coz, kod, self.t_adres.value or "")
+            except ValueError as exc:
+                durum.value = str(exc)
+                self.page.update()
+                return None
+            guven = await self._tercih("sertifika_guven") == "1"
+            return Istemci(adres, sertifika_dogrula=not guven)
+
+        async def durum_yukle():
+            client = await istemci_olustur()
+            if client is None:
+                return
+            try:
+                veri = await asyncio.to_thread(client.get, "/durum", kurum_kodu=kurum_kodu.value)
+            except ApiHatasi as exc:
+                durum.value = str(exc)
+            else:
+                durum.value = (f"{veri.get('kurum') or 'Kurum'} • {veri.get('lisans') or 'Lisans bilgisi yok'}\n"
+                               f"{veri.get('satici') or SATICI}"
+                               + (f" • {veri['satici_iletisim']}" if veri.get("satici_iletisim") else ""))
+            self.page.update()
+
+        async def dosyadan_yukle(e=None):
+            picker = ft.FilePicker()
+            self.page.overlay.append(picker)
+            self.page.update()
+            try:
+                secilenler = await picker.pick_files(
+                    dialog_title="Lisans dosyası seç",
+                    file_type=ft.FilePickerFileType.CUSTOM,
+                    allowed_extensions=["lic", "txt"],
+                    allow_multiple=False,
+                    with_data=True,
+                )
+                if not secilenler:
+                    return
+                dosya = secilenler[0]
+                if dosya.bytes is None:
+                    durum.value = "Dosya okunamadı. Lisans anahtarını metin alanına yapıştırın."
+                else:
+                    try:
+                        anahtar.value = dosya.bytes.decode("utf-8-sig").strip()
+                    except UnicodeDecodeError:
+                        durum.value = "Lisans dosyası UTF-8 metin biçiminde olmalıdır."
+                self.page.update()
+            finally:
+                self.page.overlay.remove(picker)
+                self.page.update()
+
+        async def etkinlestir(e=None):
+            metin = (anahtar.value or "").strip()
+            if not metin:
+                durum.value = "Lisans anahtarını yapıştırın veya dosyadan yükleyin."
+                self.page.update()
+                return
+            client = await istemci_olustur()
+            if client is None:
+                return
+            durum.value = "Lisans doğrulanıyor…"
+            self.page.update()
+            try:
+                sonuc = await asyncio.to_thread(client.post, "/lisans/etkinlestir", {
+                    "kurum_kodu": kurum_kodu.value, "anahtar": metin,
+                })
+            except ApiHatasi as exc:
+                durum.value = str(exc)
+            else:
+                anahtar.value = ""
+                durum.value = f"Lisans etkinleştirildi: {sonuc['okul']} • Bitiş: {sonuc['bitis']}"
+            self.page.update()
+
+        self.page.show_dialog(ft.AlertDialog(
+            title=ft.Text("Lisans"),
+            content=ft.Column([
+                durum,
+                ft.Text("Lisans talebi için okul adı ve kurum kodunu satıcıya iletin.",
+                        size=12, color=ft.Colors.BLUE_GREY_700),
+                kurum_kodu,
+                anahtar,
+                ft.Text(f"Program sahibi ve destek: {SATICI}"
+                        + (f" • {self.ben.get('satici_iletisim')}" if self.ben.get("satici_iletisim") else ""),
+                        size=12, color=ft.Colors.BLUE_GREY_700),
+            ], tight=True, scroll=ft.ScrollMode.AUTO, width=520),
+            scrollable=True,
+            actions=[
+                ft.TextButton("Dosyadan yükle", icon=ft.Icons.UPLOAD_FILE, on_click=dosyadan_yukle),
+                ft.TextButton("Kapat", on_click=lambda e: self.page.pop_dialog()),
+                ft.FilledButton("Etkinleştir", icon=ft.Icons.VERIFIED, on_click=etkinlestir),
+            ]))
+        await durum_yukle()
 
     def _adres_coz(self, kurum: str, adres: str) -> str:
         """Elle adres > web sabit > varsayılan > LAN keşif > GitHub gecit."""
@@ -551,6 +737,7 @@ class Uygulama:
         self.ana = ft.View(route="/ana", padding=0, bgcolor=ft.Colors.GREY_50, navigation_bar=self.nav,
                            appbar=ft.AppBar(title=ft.Text(kurum, size=16, weight=ft.FontWeight.W_600),
                                             bgcolor=ft.Colors.WHITE, elevation=0, actions=[
+                               self._sayfa_yardim_dugmesi("Gösterge Paneli"),
                                ft.Container(self.halka, padding=ft.Padding.only(right=8)),
                                ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", on_click=self.sekme_yenile), menu]),
                            controls=[ft.SafeArea(ft.Row([self.rail, self.nav_ayrac, self.govde],
@@ -890,7 +1077,9 @@ class Uygulama:
             return
         ust = ft.Row([self._yil_secici(self.sekme_yenile),
                       ft.Dropdown(label="Durum", value=self.s_durum, width=150, dense=True, on_select=durum_sec,
-                                  options=[secenek("acik", "Açık işler"), secenek("Teklif", "Teklifler"), secenek("tumu", "Tümü")])],
+                                  options=[secenek("acik", "Açık işler"), secenek("Teklif", "Teklifler"), secenek("tumu", "Tümü")]),
+                      ft.OutlinedButton("Excel'e aktar", icon=ft.Icons.TABLE_VIEW,
+                                        on_click=lambda e: self.page.run_task(self.siparis_disa_aktar))],
                      wrap=True)
         kontroller = [ust, ft.TextField(label="Ara (no, konu, müşteri)", value=self.s_ara, prefix_icon=ft.Icons.SEARCH, dense=True,
                                         on_submit=ara),
@@ -919,24 +1108,160 @@ class Uygulama:
             await self.onay_detay("Sipariş", sid)
         kontroller = self._siparis_kontrolleri(s)
         kontroller.insert(0, satir("Onay", s.get("onay"), True))
+        if s.get("faturalandirabilir") and s["durum"] not in ("İptal", "Faturalandı"):
+            kontroller.append(ft.FilledButton(
+                "Siparişi faturala", icon=ft.Icons.RECEIPT_LONG,
+                on_click=lambda e: self.page.run_task(self.siparis_faturala, s), height=46))
+        if s.get("stok_cikisi_yapabilir") and s["durum"] not in ("İptal", "Kapandı"):
+            kontroller.append(ft.OutlinedButton(
+                "Siparişe malzeme çıkışı", icon=ft.Icons.INVENTORY_2,
+                on_click=lambda e: self.page.run_task(self.siparis_stok_formu, s), height=46))
+        belge_turleri = [
+            ("Keşif ve iş planı", "kesif"), ("Proforma fatura", "proforma"),
+            ("Fiyat teklifi", "teklif"), ("Sözleşme / protokol", "sozlesme"),
+            ("Ön maliyet çizelgesi", "maliyet"), ("Kullanılan malzeme listesi", "malzeme"),
+            ("Çalışma istek listesi", "istek"), ("Görevlendirme onayı", "gorev"),
+            ("Geçici kabul tutanağı", "gecici"), ("Muayene ve kabul tutanağı", "kabul"),
+        ]
+        kontroller.append(baslik("Sipariş belgeleri"))
+        kontroller.extend(
+            ft.OutlinedButton(ad, icon=ft.Icons.PICTURE_AS_PDF,
+                              on_click=lambda e, belge_turu=tur: self.page.run_task(
+                                  self.siparis_belgesi, sid, belge_turu))
+            for ad, tur in belge_turleri
+        )
+        if s.get("duzenlenebilir"):
+            kontroller.append(ft.FilledButton(
+                "İş talebini düzenle", icon=ft.Icons.EDIT,
+                on_click=lambda e: self.page.run_task(self.is_talebi_formu, s), height=46))
+        if s.get("silinebilir"):
+            async def sil():
+                sonuc = await self.cagir(self.api.delete, f"/siparisler/{sid}", surum=s["surum"])
+                if sonuc is not None:
+                    self.bildir("İş talebi silindi.")
+                    self.geri()
+                    await self.sekme_yenile()
+            kontroller.append(ft.OutlinedButton(
+                "İş talebini sil", icon=ft.Icons.DELETE_OUTLINE,
+                style=ft.ButtonStyle(color=ft.Colors.RED_700),
+                on_click=lambda e: self.sor(
+                    "İş talebini sil", f"{s['siparis_no']} numaralı teklif silinsin mi?",
+                    sil, "Sil")))
         if self.modul("onay") or self.modul("siparis"):
             kontroller.append(ft.FilledButton("Onay işlemleri", icon=ft.Icons.TASK_ALT, on_click=onay, height=46))
-        self.ac(self.gorunum(s["siparis_no"], kontroller))
+        self.ac(self.gorunum(s["siparis_no"], kontroller, yardim="Siparişler / İş Emirleri"))
 
-    async def is_talebi_formu(self, e=None):
+    async def siparis_disa_aktar(self):
+        dosya = await self.cagir(self.api.get, "/siparisler/disa-aktar", yil=self.yil,
+                                 durum=getattr(self, "s_durum", "acik"), ara=getattr(self, "s_ara", ""))
+        if dosya is not None:
+            await self._dosyayi_kaydet(dosya, "Sipariş listesini Excel'e aktar")
+
+    async def siparis_faturala(self, siparis: dict):
+        belge_turu = ft.Dropdown(
+            label="Satış belgesi türü", value="e-Arşiv Fatura",
+            options=[secenek(x, x) for x in siparis["satis_belge_turleri"]])
+        tevkifat = ft.Dropdown(
+            label="KDV tevkifatı", value="Yok",
+            options=[secenek(x, x) for x in siparis["tevkifat_turleri"]])
+        tarih_alani = ft.TextField(label="Fatura tarihi (YYYY-AA-GG)", value=date.today().isoformat())
+        avans = ft.TextField(label="Avans mahsubu (TL)", value=str(siparis.get("avans_kalan") or 0))
+
+        async def kaydet(e):
+            try:
+                veri = {"surum": siparis["surum"], "belge_turu": belge_turu.value,
+                        "tarih": iso_tarih(tarih_alani.value, "Fatura tarihi"),
+                        "tevkifat": tevkifat.value, "avans_mahsup": sayi(avans.value, "Avans mahsubu") or 0}
+            except ValueError as h:
+                self.bilgi("Hatalı bilgi", str(h))
+                return
+            sonuc = await self.cagir(self.api.post, f"/siparisler/{siparis['id']}/faturala", veri)
+            if sonuc is None:
+                return
+
+            async def sonra():
+                self.geri()
+                await self.siparis_detay(siparis["id"])
+            self.bilgi("Satış faturası oluşturuldu",
+                       f"{sonuc['belge_no']} • Matrah: {para(sonuc['matrah'])} TL • "
+                       f"Genel toplam: {para(sonuc['genel_toplam'])} TL • "
+                       f"Tahsil edilecek: {para(sonuc['net_tutar'])} TL", sonra)
+
+        self.ac(self.gorunum("Siparişi faturala", [
+            mesaj_kutusu(["Siparişte daha önce faturalanmamış ürün miktarları faturaya aktarılır. "
+                          "Vergi belgesi numarası e-Fatura/e-Arşiv portalında düzenlenen belgeyle aynı olmalıdır."], "bilgi"),
+            belge_turu, tarih_alani, tevkifat, avans,
+            ft.FilledButton("Faturayı oluştur", icon=ft.Icons.RECEIPT_LONG, on_click=kaydet, height=48),
+        ]))
+
+    async def siparis_stok_formu(self, siparis: dict):
+        veri = await self.cagir(self.api.get, "/stok")
+        if veri is None:
+            return
+        malzemeler = [m for m in veri["malzemeler"] if m["kalan"] > 0]
+        if not malzemeler:
+            self.bilgi("Stok bulunamadı", "Çıkış yapılabilecek miktarı olan aktif malzeme bulunmuyor.")
+            return
+        malzeme = ft.Dropdown(label="Malzeme", options=[
+            secenek(m["id"], f"{m['ad']} — mevcut {m['kalan']:g} {m.get('birim') or ''}")
+            for m in malzemeler])
+        miktar = ft.TextField(label="Miktar", keyboard_type=ft.KeyboardType.NUMBER)
+        tarih_alani = ft.TextField(label="Hareket tarihi (YYYY-AA-GG)", value=date.today().isoformat())
+        neden = ft.Dropdown(label="Neden", value="Üretime Sevk",
+                            options=[secenek(x, x) for x in ("Üretime Sevk", "Sayım Noksanı / Fire",
+                                                             "Bozulma / Hurda", "Diğer")])
+        aciklama = ft.TextField(label="Açıklama")
+
+        async def kaydet(e):
+            try:
+                veri_istegi = {"malzeme_id": int(malzeme.value) if malzeme.value else None,
+                               "miktar": sayi(miktar.value, "Miktar"),
+                               "tarih": iso_tarih(tarih_alani.value, "Hareket tarihi"),
+                               "neden": neden.value, "aciklama": aciklama.value or ""}
+            except (TypeError, ValueError) as h:
+                self.bilgi("Hatalı bilgi", str(h) or "Malzeme seçiniz.")
+                return
+            sonuc = await self.cagir(self.api.post, f"/siparisler/{siparis['id']}/stok-cikisi", veri_istegi)
+            if sonuc is None:
+                return
+
+            async def sonra():
+                self.geri()
+                await self.siparis_detay(siparis["id"])
+            self.bilgi("Stok çıkışı kaydedildi",
+                       f"Ağırlıklı ortalama maliyet: {para(sonuc['birim_fiyat'])} TL • "
+                       f"Toplam: {para(sonuc['tutar'])} TL", sonra)
+
+        self.ac(self.gorunum(f"{siparis['siparis_no']} — malzeme çıkışı", [
+            mesaj_kutusu(["Stok çıkışı mevcut miktar ve tarih itibarıyla ağırlıklı ortalama maliyetle kaydedilir; "
+                          "yardımcı yevmiye kaydı oluşturulur."], "bilgi"),
+            malzeme, miktar, tarih_alani, neden, aciklama,
+            ft.FilledButton("Stok çıkışını kaydet", icon=ft.Icons.INVENTORY_2, on_click=kaydet, height=48),
+        ]))
+
+    async def siparis_belgesi(self, sid: int, tur: str):
+        dosya = await self.cagir(self.api.get, f"/siparisler/{sid}/belge/{tur}")
+        if dosya is not None:
+            await self._dosyayi_kaydet(dosya, "Sipariş belgesini kaydet")
+
+    async def is_talebi_formu(self, e=None, siparis: dict | None = None):
         sec = await self.cagir(self.api.get, "/secenekler/siparis")
         if sec is None:
             return
         urunler = {str(u["id"]): u for u in sec["urunler"]}
         cari = ft.Dropdown(label="Müşteri (iş sahibi)", editable=True, enable_filter=True, expand=True,
-                           options=[secenek(c["id"], c["unvan"]) for c in sec["cariler"]])
+                           options=[secenek(c["id"], c["unvan"]) for c in sec["cariler"]],
+                           value=str(siparis["cari_id"]) if siparis and siparis.get("cari_id") else None)
         bolum = ft.Dropdown(label="Bölüm / atölye", expand=True, options=[secenek(b["id"], b["ad"]) for b in sec["bolumler"]],
-                            value=str(sec["bolumler"][0]["id"]) if len(sec["bolumler"]) == 1 else None)
-        konu = ft.TextField(label="İşin konusu", hint_text="Boş bırakılırsa ilk ürünün adı yazılır")
-        esas = ft.Dropdown(label="Ücret esası", value=sec["ucret_esaslari"][0], expand=True,
+                            value=str(siparis["bolum_id"]) if siparis else
+                            (str(sec["bolumler"][0]["id"]) if len(sec["bolumler"]) == 1 else None))
+        konu = ft.TextField(label="İşin konusu", hint_text="Boş bırakılırsa ilk ürünün adı yazılır",
+                            value=(siparis or {}).get("konu") or "")
+        esas = ft.Dropdown(label="Ücret esası", value=(siparis or {}).get("ucret_esasi") or sec["ucret_esaslari"][0], expand=True,
                            options=[secenek(x, x) for x in sec["ucret_esaslari"]])
-        teslim = ft.TextField(label="Teslim tarihi", hint_text="GG.AA.YYYY", keyboard_type=ft.KeyboardType.DATETIME)
-        aciklama = ft.TextField(label="Açıklama", multiline=True, min_lines=2)
+        teslim = ft.TextField(label="Teslim tarihi", hint_text="GG.AA.YYYY", keyboard_type=ft.KeyboardType.DATETIME,
+                              value=(siparis or {}).get("teslim_tarihi") or "")
+        aciklama = ft.TextField(label="Açıklama", multiline=True, min_lines=2, value=(siparis or {}).get("aciklama") or "")
         toplam = ft.Text(weight=ft.FontWeight.BOLD)
         kalem_kutusu = ft.Column(spacing=8)
         kalemler: list[dict] = []
@@ -953,7 +1278,7 @@ class Uygulama:
             toplam.value = f"Tahmini bedel (KDV hariç): {para(t)} TL"
             self.page.update()
 
-        def kalem_ekle(e=None):
+        def kalem_ekle(e=None, mevcut=None):
             urun = ft.Dropdown(label="Ürün / hizmet", editable=True, enable_filter=True, expand=True,
                                options=[secenek(u["id"], u["ad"]) for u in sec["urunler"]])
             miktar = ft.TextField(label="Miktar", value="1", width=90, keyboard_type=ft.KeyboardType.NUMBER, on_change=hesapla)
@@ -961,6 +1286,11 @@ class Uygulama:
                                  hint_text="tespit fiyatı")
             isk = ft.TextField(label="İsk. %", width=80, keyboard_type=ft.KeyboardType.NUMBER, on_change=hesapla)
             k = {"urun": urun, "miktar": miktar, "fiyat": fiyat, "isk": isk}
+            if mevcut:
+                urun.value = str(mevcut["urun_id"]) if mevcut.get("urun_id") else None
+                miktar.value = str(mevcut.get("miktar") or 1)
+                fiyat.value = str(mevcut.get("birim_fiyat") or 0)
+                isk.value = str((mevcut.get("iskonto_orani") or 0) * 100)
 
             def urun_secildi(e):
                 u = urunler.get(urun.value or "")
@@ -993,27 +1323,44 @@ class Uygulama:
             except ValueError as h:
                 self.bilgi("Eksik veya hatalı bilgi", str(h))
                 return
-            y = await self.cagir(self.api.post, "/siparisler", veri)
+            if siparis:
+                veri["surum"] = siparis["surum"]
+                veri["tarih"] = siparis["tarih"]
+                y = await self.cagir(self.api.put, f"/siparisler/{siparis['id']}", veri)
+            else:
+                y = await self.cagir(self.api.post, "/siparisler", veri)
             if y is None:
                 return
 
             async def sonra():
                 self.geri()
-                await self.sekme_yenile()
-            metin = (f"{y['siparis_no']} numaralı iş talebi 'Teklif' olarak kaydedildi. Malzeme maliyet kartından, işçilik yasal "
-                     "üst sınırdan hesaplandı. Fiyat ve sözleşme kontrolünden sonra onaya gönderilir.")
+                if siparis:
+                    await self.siparis_detay(siparis["id"])
+                else:
+                    await self.sekme_yenile()
+            metin = (f"{y['siparis_no']} numaralı iş talebi " +
+                     ("güncellendi." if siparis else
+                      "'Teklif' olarak kaydedildi. Malzeme maliyet kartından, işçilik yasal üst sınırdan hesaplandı. "
+                      "Fiyat ve sözleşme kontrolünden sonra onaya gönderilir."))
             if y["uyarilar"]:
                 metin += "\n\nDikkat:\n• " + "\n• ".join(y["uyarilar"])
             self.bilgi("İş talebi kaydedildi", metin, sonra)
 
-        kalem_ekle()
+        if siparis:
+            for mevcut_kalem in siparis["kalemler"]:
+                kalem_ekle(mevcut=mevcut_kalem)
+        else:
+            kalem_ekle()
         hesapla()
-        self.ac(self.gorunum("Yeni iş talebi", [
-            mesaj_kutusu(["İş talebi 'Teklif' durumunda kaydedilir. Kâr, faaliyet gideri, öğrenci hakkı ve işçilik mevzuattaki "
+        self.ac(self.gorunum("İş talebini düzenle" if siparis else "Yeni iş talebi", [
+            mesaj_kutusu(["Teklif aşamasındaki değişikliklerde kâr, faaliyet gideri, öğrenci hakkı ve işçilik mevzuattaki "
+                          "oranlarla yeniden hesaplanır." if siparis else
+                          "İş talebi 'Teklif' durumunda kaydedilir. Kâr, faaliyet gideri, öğrenci hakkı ve işçilik mevzuattaki "
                           "oranlarla program tarafından hesaplanır."], "bilgi"),
             ft.Row([cari]), ft.Row([bolum]), konu, ft.Row([esas]), teslim, baslik("Kalemler"), kalem_kutusu,
             ft.TextButton("Kalem ekle", icon=ft.Icons.ADD, on_click=kalem_ekle), toplam, aciklama,
-            ft.FilledButton("Kaydet", icon=ft.Icons.SAVE, on_click=kaydet, height=48)]))
+            ft.FilledButton("Değişiklikleri kaydet" if siparis else "Kaydet", icon=ft.Icons.SAVE,
+                            on_click=kaydet, height=48)]))
 
     # ------------------------------------------------------------ fazla çalışma
     async def fazla_sekmesi(self):
@@ -2264,22 +2611,135 @@ class Uygulama:
             self.page.overlay.remove(picker)
             self.page.update()
 
-    async def stok_ekrani(self):
-        v = await self.cagir(self.api.get, "/stok")
+    async def stok_ekrani(self, yil: int | None = None, gorunum: str = "bakiye"):
+        yil = self.yil if yil is None else yil
+        v = await self.cagir(self.api.get, "/stok", yil=yil)
         if v is None:
             return
-        kontroller = [kart(satir("Toplam stok değeri", para(v["toplam"]) + " TL", True),
-                           satir("Kritik seviyedeki malzeme", sum(1 for m in v["malzemeler"] if m["kritik"])))]
-        for m in sorted(v["malzemeler"], key=lambda m: (not (m["kritik"] or m["kalan"] < 0), m["ad"])):
-            renk = ft.Colors.RED_700 if m["kalan"] < 0 or m["kritik"] else None
-            kontroller.append(ft.Card(content=ft.ListTile(
-                leading=ft.Icon(ft.Icons.WARNING_AMBER if renk else ft.Icons.INVENTORY_2, color=renk or ft.Colors.TEAL_700),
-                title=ft.Text(m["ad"], weight=ft.FontWeight.BOLD),
-                subtitle=ft.Text(f"Kalan {m['kalan']:g} {m.get('birim') or ''}"
-                                 + (f" (kritik {m['kritik_stok']:g})" if m.get("kritik_stok") else "")
-                                 + f" • Ort. {para(m['ortalama_maliyet'])} TL", color=renk),
-                trailing=ft.Text(para(m["tutar"]) + " TL"))))
-        self.ac(self.gorunum("Stok durumu", kontroller))
+
+        async def yil_sec(e):
+            self.geri()
+            await self.stok_ekrani(int(e.control.value), gorunum)
+
+        async def gorunum_sec(e):
+            self.geri()
+            await self.stok_ekrani(yil, e.control.value)
+
+        kontroller = [ft.Row([
+            ft.Dropdown(label="Yıl", value=str(yil), width=130, dense=True, on_select=yil_sec,
+                        options=[secenek(y, str(y)) for y in range(self.yil, self.yil - 6, -1)]),
+            ft.Dropdown(label="Görünüm", value=gorunum, width=190, dense=True, on_select=gorunum_sec,
+                        options=[secenek("bakiye", "Stok bakiyeleri"), secenek("hareketler", "Hareketler")]),
+            ft.OutlinedButton("Excel'e aktar", icon=ft.Icons.TABLE_VIEW,
+                              on_click=lambda e: self.page.run_task(self.stok_disa_aktar, yil)),
+        ], wrap=True)]
+        if gorunum == "bakiye":
+            kontroller.append(kart(satir("Toplam stok değeri", para(v["toplam"]) + " TL", True),
+                                   satir("Kritik seviyedeki malzeme",
+                                         sum(1 for m in v["malzemeler"] if m["kritik"]))))
+            for m in sorted(v["malzemeler"], key=lambda m: (not (m["kritik"] or m["kalan"] < 0), m["ad"])):
+                renk = ft.Colors.RED_700 if m["kalan"] < 0 or m["kritik"] else None
+                kontroller.append(ft.Card(content=ft.ListTile(
+                    leading=ft.Icon(ft.Icons.WARNING_AMBER if renk else ft.Icons.INVENTORY_2,
+                                    color=renk or ft.Colors.TEAL_700),
+                    title=ft.Text(m["ad"], weight=ft.FontWeight.BOLD),
+                    subtitle=ft.Text(f"Kalan {m['kalan']:g} {m.get('birim') or ''}"
+                                     + (f" (kritik {m['kritik_stok']:g})" if m.get("kritik_stok") else "")
+                                     + f" • Ort. {para(m['ortalama_maliyet'])} TL", color=renk),
+                    trailing=ft.Text(para(m["tutar"]) + " TL"))))
+        else:
+            for h in v["hareketler"]:
+                cikis = h["yon"] == "Çıkış"
+                row = ft.ListTile(
+                    leading=ft.Icon(ft.Icons.NORTH_EAST if cikis else ft.Icons.SOUTH_WEST,
+                                    color=ft.Colors.RED_700 if cikis else ft.Colors.GREEN_700),
+                    title=ft.Text(f"{h['malzeme']} • {h['yon']}"),
+                    subtitle=ft.Text(f"{tarih(h['tarih'])} • {h['miktar']:g} {h.get('birim') or ''}"
+                                     f" × {para(h['birim_fiyat'])} TL"
+                                     + (f" • {h['siparis_no']}" if h.get("siparis_no") else "")
+                                     + (f"\n{h['aciklama']}" if h.get("aciklama") else "")),
+                    trailing=ft.Text(para(h["tutar"]) + " TL", weight=ft.FontWeight.BOLD),
+                    is_three_line=bool(h.get("aciklama")))
+                if h["silinebilir"]:
+                    async def sil(hareket_id=h["id"]):
+                        sonuc = await self.cagir(self.api.delete, f"/stok/hareketler/{hareket_id}",
+                                                 surum=v["surum"])
+                        if sonuc is not None:
+                            self.geri()
+                            await self.stok_ekrani(yil, gorunum)
+                    row.trailing = ft.Row([
+                        ft.Text(para(h["tutar"]) + " TL", weight=ft.FontWeight.BOLD),
+                        ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, tooltip="Stok hareketini sil",
+                                      on_click=lambda e, hsil=sil, tutar=h["tutar"]: self.sor(
+                                          "Stok hareketini sil", f"{para(tutar)} TL tutarlı hareket silinsin mi?",
+                                          hsil, "Sil")),
+                    ], tight=True)
+                kontroller.append(ft.Card(content=row))
+            if not v["hareketler"]:
+                kontroller.append(ft.Text(f"{yil} yılında stok hareketi yok."))
+        if v["yazabilir"]:
+            kontroller.extend([
+                ft.FilledButton("Stok girişi", icon=ft.Icons.SOUTH_WEST,
+                                on_click=lambda e: self.page.run_task(self.stok_hareket_formu, "Giriş", v)),
+                ft.OutlinedButton("Stok çıkışı", icon=ft.Icons.NORTH_EAST,
+                                  on_click=lambda e: self.page.run_task(self.stok_hareket_formu, "Çıkış", v)),
+            ])
+        self.ac(self.gorunum("Stok / Ambar", kontroller))
+
+    async def stok_disa_aktar(self, yil: int):
+        dosya = await self.cagir(self.api.get, "/stok/disa-aktar", yil=yil)
+        if dosya is not None:
+            await self._dosyayi_kaydet(dosya, "Stok bakiyesi ve hareketlerini Excel'e aktar")
+
+    async def stok_hareket_formu(self, yon: str, secenekler: dict | None = None):
+        if secenekler is None:
+            secenekler = await self.cagir(self.api.get, "/stok", yil=self.yil)
+        if secenekler is None:
+            return
+        malzeme = ft.Dropdown(label="Malzeme", expand=True,
+                              options=[secenek(m["id"], f"{m['ad']} • kalan {m['kalan']:g} {m.get('birim') or ''}")
+                                       for m in secenekler["malzeme_secenekleri"]])
+        tarih_alani = ft.TextField(label="Tarih (YYYY-AA-GG)", value=date.today().isoformat())
+        nedenler = secenekler["giris_nedenleri"] if yon == "Giriş" else secenekler["cikis_nedenleri"]
+        neden = ft.Dropdown(label="Neden", value=nedenler[0], options=[secenek(x, x) for x in nedenler])
+        miktar = ft.TextField(label="Miktar", keyboard_type=ft.KeyboardType.NUMBER)
+        fiyat = ft.TextField(label="Birim fiyat (KDV hariç)",
+                             keyboard_type=ft.KeyboardType.NUMBER, disabled=yon == "Çıkış")
+        siparis = ft.Dropdown(label="Sipariş (isteğe bağlı)", expand=True,
+                              options=[secenek(s["id"], f"{s['siparis_no']} • {s.get('konu') or ''}")
+                                       for s in secenekler["siparisler"]])
+        aciklama = ft.TextField(label="Açıklama")
+        sifir_onay = ft.Checkbox(label="Sıfır fiyatlı stok girişini onaylıyorum", visible=yon == "Giriş")
+        bilgi = ft.Text(
+            "Çıkışlar, seçilen tarih itibarıyla ağırlıklı ortalama maliyetle kaydedilir. "
+            "Stok yetersizse işlem reddedilir." if yon == "Çıkış" else
+            "Elle girişler yevmiyeye kaydedilmez; stoklu alış belgeleri otomatik giriş oluşturur.",
+            color=ft.Colors.BLUE_700)
+
+        async def kaydet(e):
+            try:
+                body = {
+                    "tarih": iso_tarih(tarih_alani.value, "Hareket tarihi"),
+                    "malzeme_id": int(malzeme.value) if malzeme.value else None,
+                    "yon": yon, "neden": neden.value, "miktar": sayi(miktar.value, "Miktar"),
+                    "birim_fiyat": sayi(fiyat.value, "Birim fiyat") or 0,
+                    "siparis_id": int(siparis.value) if siparis.value else None,
+                    "aciklama": aciklama.value or "",
+                    "sifir_fiyat_onaylandi": bool(sifir_onay.value),
+                }
+            except (TypeError, ValueError) as h:
+                self.bilgi("Eksik veya hatalı bilgi", str(h))
+                return
+            sonuc = await self.cagir(self.api.post, "/stok/hareketler", body)
+            if sonuc is None:
+                return
+            self.geri()
+            await self.stok_ekrani(self.yil, "hareketler")
+
+        self.ac(self.gorunum(f"Stok {yon.lower()}i", [
+            tarih_alani, malzeme, neden, miktar, fiyat, siparis, aciklama, sifir_onay, bilgi,
+            ft.FilledButton("Hareketi kaydet", icon=ft.Icons.SAVE, on_click=kaydet, height=48),
+        ]))
 
     async def kasa_ekrani(self, ay: int | None = None):
         ay = self.ay if ay is None else ay
@@ -2290,8 +2750,11 @@ class Uygulama:
         async def ay_sec(e):
             self.geri()
             await self.kasa_ekrani(int(e.control.value))
-        kontroller = [ft.Dropdown(label="Dönem", value=str(ay), width=160, dense=True, on_select=ay_sec,
+        kontroller = [ft.Row([ft.Dropdown(label="Dönem", value=str(ay), width=160, dense=True, on_select=ay_sec,
                                   options=[secenek(0, f"{self.yil} tüm yıl")] + [secenek(i + 1, a) for i, a in enumerate(AYLAR)]),
+                              ft.OutlinedButton("Excel'e aktar", icon=ft.Icons.TABLE_VIEW,
+                                                on_click=lambda e: self.page.run_task(self.kasa_disa_aktar, ay))],
+                             wrap=True),
                       kart(satir("Kasa (100) bakiyesi", para(v["kasa"]) + " TL", True),
                            satir("Banka (102) bakiyesi", para(v["banka"]) + " TL", True),
                            satir("Dönem girişleri", para(v["giris"]) + " TL", renk=ft.Colors.GREEN_800),
@@ -2304,10 +2767,154 @@ class Uygulama:
                 title=ft.Text(f"{h['tur']} • {h.get('unvan') or h.get('aciklama') or ''}"),
                 subtitle=ft.Text(f"{tarih(h['tarih'])} • {h['hesap']}" + (f" • {h['fatura_no']}" if h.get("fatura_no") else "")),
                 trailing=ft.Text(("+" if giris else "−") + para(h["tutar"]), weight=ft.FontWeight.BOLD,
-                                 color=ft.Colors.GREEN_800 if giris else ft.Colors.RED_700))))
+                                 color=ft.Colors.GREEN_800 if giris else ft.Colors.RED_700),
+                on_click=lambda e, hid=h["id"]: self.page.run_task(self.kasa_detay, hid))))
         if not v["hareketler"]:
             kontroller.append(ft.Text("Bu dönemde hareket yok."))
         self.ac(self.gorunum("Kasa / banka", kontroller))
+        if v["yazabilir"]:
+            self.ana.floating_action_button = ft.FloatingActionButton(
+                icon=ft.Icons.ADD, tooltip="Kasa / banka hareketi ekle",
+                on_click=lambda e: self.page.run_task(self.kasa_formu, v))
+        else:
+            self.ana.floating_action_button = None
+
+    async def kasa_disa_aktar(self, ay: int):
+        dosya = await self.cagir(self.api.get, "/kasa/disa-aktar", yil=self.yil, ay=ay)
+        if dosya is not None:
+            await self._dosyayi_kaydet(dosya, "Kasa/banka hareketlerini Excel'e aktar")
+
+    async def kasa_detay(self, hareket_id: int):
+        h = await self.cagir(self.api.get, f"/kasa/{hareket_id}")
+        if h is None:
+            return
+        kontroller = [kart(baslik("Kasa / banka hareketi"),
+                           satir("Tarih", tarih(h["tarih"])), satir("Hesap", h["hesap"]),
+                           satir("Yön / tür", f"{h['yon']} • {h['tur']}", True),
+                           satir("Tutar", para(h["tutar"]) + " TL", True),
+                           satir("Hasılat (KDV hariç)", para(h["hasilat_tutari"]) + " TL"),
+                           satir("Cari", h.get("unvan") or "-"),
+                           satir("Fatura", h.get("fatura_no") or "-"),
+                           satir("Sipariş", h.get("siparis_no") or "-"),
+                           satir("Dekont / makbuz no", h.get("belge_no") or "-"),
+                           satir("Kaynak", h.get("kaynak") or "Manuel"))]
+        if h.get("aciklama"):
+            kontroller.append(kart(baslik("Açıklama"), ft.Text(h["aciklama"], selectable=True)))
+        if h.get("duzenlenebilir"):
+            kontroller.append(ft.FilledButton(
+                "Hareketi düzenle", icon=ft.Icons.EDIT,
+                on_click=lambda e: self.page.run_task(self.kasa_formu, None, h)))
+        if h.get("silinebilir"):
+            async def sil():
+                sonuc = await self.cagir(self.api.delete, f"/kasa/{hareket_id}", surum=h["surum"])
+                if sonuc is not None:
+                    self.geri()
+                    await self.kasa_ekrani()
+            kontroller.append(ft.OutlinedButton(
+                "Hareketi sil", icon=ft.Icons.DELETE_OUTLINE,
+                style=ft.ButtonStyle(color=ft.Colors.RED_700),
+                on_click=lambda e: self.sor(
+                    "Hareketi sil", f"{para(h['tutar'])} TL tutarlı '{h['tur']}' kaydı silinsin mi?",
+                    sil, "Sil")))
+        self.ac(self.gorunum(f"{h['tur']} • {para(h['tutar'])} TL", kontroller, yardim="Kasa / Banka"))
+
+    async def kasa_formu(self, secenekler: dict | None = None, hareket: dict | None = None):
+        if hareket:
+            secenekler = await self.cagir(self.api.get, "/kasa", yil=self.yil)
+        elif secenekler is None:
+            secenekler = await self.cagir(self.api.get, "/kasa", yil=self.yil)
+        if secenekler is None:
+            return
+        tarih_alani = ft.TextField(label="Tarih (YYYY-AA-GG)", value=(hareket or {}).get("tarih") or date.today().isoformat())
+        hesap = ft.Dropdown(label="Kasa / banka", value=(hareket or {}).get("hesap") or "Banka (102)",
+                            options=[secenek(x, x) for x in secenekler["hesaplar"]])
+        yon = ft.Dropdown(label="Yön", value=(hareket or {}).get("yon") or "Giriş",
+                          options=[secenek(x, x) for x in ("Giriş", "Çıkış")])
+        turler = secenekler["giris_turleri"] if yon.value == "Giriş" else secenekler["cikis_turleri"]
+        tur = ft.Dropdown(label="İşlem türü",
+                          value=(hareket or {}).get("tur") or turler[0],
+                          options=[secenek(x, x) for x in turler])
+        cari = ft.Dropdown(label="Cari (tahsilat/ödemede zorunlu)", expand=True,
+                           options=[secenek(c["id"], c["unvan"]) for c in secenekler["cariler"]],
+                           value=str(hareket["cari_id"]) if hareket and hareket.get("cari_id") else None)
+        fatura = ft.Dropdown(label="Fatura (isteğe bağlı)", expand=True,
+                             options=[secenek(x["id"], f"{x.get('belge_no') or '-'} • {x['unvan'] or ''} "
+                                                       f"• kalan {para(x['kalan'])} TL")
+                                      for x in secenekler["faturalar"]],
+                             value=str(hareket["fatura_id"]) if hareket and hareket.get("fatura_id") else None)
+        siparis = ft.Dropdown(label="Sipariş (isteğe bağlı)", expand=True,
+                              options=[secenek(x["id"], f"{x['siparis_no']} • {x.get('konu') or ''}")
+                                       for x in secenekler["siparisler"]],
+                              value=str(hareket["siparis_id"]) if hareket and hareket.get("siparis_id") else None)
+        tutar = ft.TextField(label="Tutar (TL)", value=str((hareket or {}).get("tutar") or ""),
+                             keyboard_type=ft.KeyboardType.NUMBER)
+        hasilat = ft.TextField(label="Hasılat tutarı (KDV hariç)",
+                               value=str(hareket["hasilat_tutari"]) if hareket and hareket.get("hasilat_tutari") is not None else "",
+                               keyboard_type=ft.KeyboardType.NUMBER)
+        belge_no = ft.TextField(label="Dekont / makbuz no", value=(hareket or {}).get("belge_no") or "")
+        aciklama = ft.TextField(label="Açıklama", value=(hareket or {}).get("aciklama") or "")
+        bakiye_onayi = ft.Checkbox(label="Bakiye yetersiz olsa da bu çıkışı kaydetmeyi onaylıyorum")
+        bakiye_onayi.visible = yon.value == "Çıkış"
+
+        def yon_degisti(e):
+            secenekler_tur = secenekler["giris_turleri"] if yon.value == "Giriş" else secenekler["cikis_turleri"]
+            tur.options = [secenek(x, x) for x in secenekler_tur]
+            if tur.value not in secenekler_tur:
+                tur.value = secenekler_tur[0]
+            bakiye_onayi.visible = yon.value == "Çıkış"
+            self.page.update()
+        yon.on_select = yon_degisti
+
+        def fatura_degisti(e):
+            f = next((x for x in secenekler["faturalar"] if str(x["id"]) == fatura.value), None)
+            if f:
+                yon.value = "Giriş" if f["tur"] == "Satış" else "Çıkış"
+                yon_degisti(None)
+                tur.value = "Tahsilat" if f["tur"] == "Satış" else "Ödeme"
+                cari.value = str(f["cari_id"])
+                if f.get("siparis_id"):
+                    siparis.value = str(f["siparis_id"])
+                if not hareket:
+                    tutar.value = str(max(f["kalan"], 0))
+                self.page.update()
+        fatura.on_select = fatura_degisti
+
+        async def kaydet(e):
+            try:
+                body = {
+                    "tarih": iso_tarih(tarih_alani.value, "Hareket tarihi"), "hesap": hesap.value,
+                    "yon": yon.value, "tur": tur.value, "tutar": sayi(tutar.value, "Tutar"),
+                    "cari_id": int(cari.value) if cari.value else None,
+                    "fatura_id": int(fatura.value) if fatura.value else None,
+                    "siparis_id": int(siparis.value) if siparis.value else None,
+                    "hasilat_tutari": sayi(hasilat.value, "Hasılat tutarı"),
+                    "belge_no": belge_no.value or "", "aciklama": aciklama.value or "",
+                    "bakiye_uyarisi_onaylandi": bool(bakiye_onayi.value),
+                }
+                if hareket:
+                    body["surum"] = hareket["surum"]
+            except (TypeError, ValueError) as h:
+                self.bilgi("Eksik veya hatalı bilgi", str(h))
+                return
+            if hareket:
+                sonuc = await self.cagir(self.api.put, f"/kasa/{hareket['id']}", body)
+            else:
+                sonuc = await self.cagir(self.api.post, "/kasa", body)
+            if sonuc is None:
+                return
+            self.geri()
+            if hareket:
+                self.geri()
+            await self.kasa_ekrani()
+
+        self.ac(self.gorunum("Kasa / banka hareketini düzenle" if hareket else "Yeni kasa / banka hareketi", [
+            tarih_alani, hesap, yon, tur, cari, fatura, siparis, tutar, hasilat,
+            belge_no, aciklama, bakiye_onayi,
+            mesaj_kutusu(["Tahsilat ve ödemeler fatura veya cariyle ilişkilendirilebilir. Çıkış tutarı mevcut hesap bakiyesini "
+                          "aşarsa ayrıca açık onay vermeniz gerekir. Hazine/SHÇEK/yıl sonu gibi bağlı kaynak hareketleri kendi "
+                          "işlem ekranından yönetilir."], "bilgi"),
+            ft.FilledButton("Hareketi kaydet", icon=ft.Icons.SAVE, on_click=kaydet, height=48),
+        ]))
 
     async def fatura_ekrani(self, tur: str, ay: int = 0):
         v = await self.cagir(self.api.get, "/faturalar", tur=tur, yil=self.yil, ay=ay)
@@ -2317,8 +2924,11 @@ class Uygulama:
         async def ay_sec(e):
             self.geri()
             await self.fatura_ekrani(tur, int(e.control.value))
-        kontroller = [ft.Dropdown(label="Dönem", value=str(ay), width=160, dense=True, on_select=ay_sec,
+        kontroller = [ft.Row([ft.Dropdown(label="Dönem", value=str(ay), width=160, dense=True, on_select=ay_sec,
                                   options=[secenek(0, f"{self.yil} tüm yıl")] + [secenek(i + 1, a) for i, a in enumerate(AYLAR)]),
+                               ft.OutlinedButton("Excel'e aktar", icon=ft.Icons.TABLE_VIEW,
+                                                on_click=lambda e: self.page.run_task(self.fatura_disa_aktar, tur, ay))],
+                              wrap=True),
                       kart(satir("Belge sayısı", len([f for f in v["faturalar"] if not f["iptal"]])),
                            satir("Matrah", para(v["matrah"]) + " TL"), satir("KDV", para(v["kdv"]) + " TL"),
                            satir("Açık bakiye", para(v["acik_bakiye"]) + " TL", True))]
@@ -2328,10 +2938,338 @@ class Uygulama:
                 title=ft.Text(f"{f.get('belge_no') or '-'} • {f.get('unvan') or ''}", weight=ft.FontWeight.BOLD),
                 subtitle=ft.Text(f"{tarih(f['tarih'])} • {f.get('belge_turu') or ''}\nKalan {para(f['kalan'])} TL • {f['durum']}",
                                  color=renk if f["iptal"] else None),
-                is_three_line=True, trailing=ft.Text(para(f["genel_toplam"]), weight=ft.FontWeight.BOLD, color=renk))))
+                is_three_line=True, trailing=ft.Text(para(f["genel_toplam"]), weight=ft.FontWeight.BOLD, color=renk),
+                on_click=lambda e, fid=f["id"]: self.page.run_task(self.fatura_detay, fid))))
         if not v["faturalar"]:
             kontroller.append(ft.Text("Bu dönemde belge yok."))
+        if v["yazabilir"]:
+            self.ana.floating_action_button = ft.FloatingActionButton(
+                icon=ft.Icons.ADD, tooltip="Yeni fatura / gider belgesi",
+                on_click=lambda e: self.page.run_task(self.fatura_formu, tur))
+        else:
+            self.ana.floating_action_button = None
         self.ac(self.gorunum("Satış faturaları" if tur == "Satış" else "Alış / gider belgeleri", kontroller))
+
+    async def fatura_disa_aktar(self, tur: str, ay: int):
+        dosya = await self.cagir(self.api.get, "/faturalar/disa-aktar", tur=tur, yil=self.yil, ay=ay)
+        if dosya is not None:
+            await self._dosyayi_kaydet(dosya, "Faturaları Excel'e aktar")
+
+    async def fatura_detay(self, fatura_id: int):
+        f = await self.cagir(self.api.get, f"/faturalar/{fatura_id}")
+        if f is None:
+            return
+        kontroller = [
+            kart(baslik("Belge bilgileri"), satir("Tür", f["belge_turu"]),
+                 satir("Belge no", f.get("belge_no") or "-"), satir("Tarih", tarih(f["tarih"])),
+                 satir("Cari", f.get("unvan") or "-"), satir("Sipariş", f.get("siparis_no") or "-"),
+                 satir("Durum", "İptal" if f["iptal"] else ("Açık" if f["kalan"] > 0.009 else "Kapandı")),
+                 satir("Matrah", para(f["matrah"]) + " TL"), satir("KDV", para(f["kdv"]) + " TL"),
+                 satir("Genel toplam", para(f["genel_toplam"]) + " TL", True),
+                 satir("Avans mahsubu", para(f["avans_mahsup"]) + " TL"),
+                 satir("Kalan", para(f["kalan"]) + " TL")),
+            baslik("Fatura kalemleri"),
+        ]
+        for k in f["kalemler"]:
+            varsayilan_ad = f"Ürün #{k.get('urun_id')}" if f["tur"] == "Satış" else f"Malzeme #{k.get('malzeme_id')}"
+            ad = k.get("aciklama") or varsayilan_ad
+            kontroller.append(satir(f"{ad} • {k['miktar']:g} {k.get('birim') or ''}",
+                                   f"{para(k['tutar'])} TL + KDV {para(k['kdv'])} TL"))
+        if f.get("odemeler"):
+            kontroller.append(baslik("Tahsilat / ödemeler"))
+            kontroller.extend(satir(f"{tarih(o['tarih'])} • {o['hesap']}", para(o["tutar"]) + " TL")
+                               for o in f["odemeler"])
+        if f.get("aciklama"):
+            kontroller.append(kart(baslik("Açıklama"), ft.Text(f["aciklama"], selectable=True)))
+        if f.get("duzenlenebilir"):
+            kontroller.append(ft.FilledButton(
+                "Belgeyi düzenle", icon=ft.Icons.EDIT,
+                on_click=lambda e: self.page.run_task(self.fatura_formu, f["tur"], f)))
+        if f.get("dogrudan_temin_belgesi"):
+            kontroller.append(ft.OutlinedButton(
+                "Doğrudan temin belgeleri", icon=ft.Icons.PICTURE_AS_PDF,
+                on_click=lambda e: self.page.run_task(self.dogrudan_temin_formu, f["id"])))
+        if f.get("odeme_yapilabilir"):
+            kontroller.append(ft.OutlinedButton(
+                "Tahsilat gir" if f["tur"] == "Satış" else "Ödeme gir", icon=ft.Icons.PAYMENTS,
+                on_click=lambda e: self.page.run_task(self.fatura_odeme_formu, f)))
+        if f.get("iptal_edilebilir"):
+            async def iptal():
+                sonuc = await self.cagir(self.api.delete, f"/faturalar/{fatura_id}", surum=f["surum"])
+                if sonuc is not None:
+                    self.geri()
+                    await self.fatura_ekrani(f["tur"])
+            kontroller.append(ft.OutlinedButton(
+                "Belgeyi iptal et", icon=ft.Icons.DELETE_OUTLINE,
+                style=ft.ButtonStyle(color=ft.Colors.RED_700),
+                on_click=lambda e: self.sor(
+                    "Belgeyi iptal et", "Fatura iptal edilecek; bağlı stok hareketleri ve yevmiye kaydı geri alınır.",
+                    iptal, "İptal et")))
+        self.ac(self.gorunum(f.get("belge_no") or "Fatura ayrıntısı", kontroller,
+                              yardim="Satış Faturaları" if f["tur"] == "Satış" else "Alış / Gider Belgeleri"))
+
+    async def fatura_formu(self, tur: str, fatura: dict | None = None):
+        sec = await self.cagir(self.api.get, "/secenekler/fatura", tur=tur)
+        if sec is None:
+            return
+        kalem_kaynaklari = {str(k["id"]): k for k in sec["kalemler"]}
+        cari = ft.Dropdown(label="Cari", editable=True, enable_filter=True, expand=True,
+                           options=[secenek(c["id"], c["unvan"]) for c in sec["cariler"]],
+                           value=str(fatura["cari_id"]) if fatura and fatura.get("cari_id") else None)
+        belge_turu = ft.Dropdown(label="Belge türü", expand=True,
+                                 options=[secenek(x, x) for x in sec["belge_turleri"]],
+                                 value=fatura.get("belge_turu") if fatura else sec["belge_turleri"][0])
+        siparis = ft.Dropdown(label="Sipariş (isteğe bağlı)", expand=True,
+                              options=[secenek(s["id"], f"{s['siparis_no']} • {s.get('konu') or ''}")
+                                      for s in sec["siparisler"]],
+                              value=str(fatura["siparis_id"]) if fatura and fatura.get("siparis_id") else None)
+        belge_no = ft.TextField(label="Belge no", value=(fatura or {}).get("belge_no") or "")
+        tarih_alani = ft.TextField(label="Tarih (YYYY-AA-GG)", value=(fatura or {}).get("tarih") or date.today().isoformat())
+        aciklama = ft.TextField(label="Açıklama", value=(fatura or {}).get("aciklama") or "")
+        tevkifat = ft.Dropdown(label="KDV tevkifatı", expand=True,
+                               options=[secenek(x, x) for x in sec["tevkifat_turleri"]],
+                               value=(fatura or {}).get("tevkifat") or "Yok")
+        avans = ft.TextField(label="Avans mahsubu (TL)", value=str((fatura or {}).get("avans_mahsup") or 0))
+        gider_turu = ft.Dropdown(label="Gider türü", expand=True,
+                                 options=[secenek(x, x) for x in sec["gider_turleri"]],
+                                 value=(fatura or {}).get("gider_turu") or sec["gider_turleri"][0])
+        temin_usulu = ft.Dropdown(label="Temin usulü", expand=True,
+                                  options=[secenek(x, x) for x in sec["temin_usulleri"]],
+                                  value=(fatura or {}).get("temin_usulu") or "Doğrudan Temin")
+        stopaj = ft.Dropdown(label="Stopaj", expand=True,
+                             options=[secenek(x, x) for x in sec["stopaj_turleri"]],
+                             value=(fatura or {}).get("stopaj_turu") or "Yok")
+        toplam_kontrol = ft.TextField(label="Belgedeki genel toplam kontrolü (TL)", keyboard_type=ft.KeyboardType.NUMBER)
+        kalem_kutusu = ft.Column(spacing=8)
+        kalemler = []
+
+        def kalem_ekle(mevcut=None):
+            secim = ft.Dropdown(label="Ürün / stok malzemesi", expand=True,
+                                options=[secenek(x["id"], x["ad"]) for x in sec["kalemler"]],
+                                value=str(mevcut.get("urun_id" if tur == "Satış" else "malzeme_id"))
+                                if mevcut and mevcut.get("urun_id" if tur == "Satış" else "malzeme_id") else None)
+            miktar = ft.TextField(label="Miktar", value=str(mevcut.get("miktar") or 1) if mevcut else "1",
+                                  width=90, keyboard_type=ft.KeyboardType.NUMBER)
+            birim = ft.TextField(label="Birim", value=(mevcut or {}).get("birim") or "Adet", width=85)
+            fiyat = ft.TextField(label="Birim fiyat", value=str((mevcut or {}).get("birim_fiyat") or 0),
+                                 width=115, keyboard_type=ft.KeyboardType.NUMBER)
+            iskonto = ft.TextField(label="İsk. %", value=str(((mevcut or {}).get("iskonto_orani") or 0) * 100),
+                                  width=85, keyboard_type=ft.KeyboardType.NUMBER)
+            kdv = ft.TextField(label="KDV %", value=str(((mevcut or {}).get("kdv_orani") or 0) * 100),
+                               width=85, keyboard_type=ft.KeyboardType.NUMBER)
+            acik = ft.TextField(label="Açıklama", value=(mevcut or {}).get("aciklama") or "", expand=True)
+            satir_kontrol = {"secim": secim, "miktar": miktar, "birim": birim, "fiyat": fiyat,
+                             "iskonto": iskonto, "kdv": kdv, "aciklama": acik}
+
+            def secim_degisti(e):
+                kaynak = kalem_kaynaklari.get(secim.value or "")
+                if kaynak:
+                    if not fatura:
+                        fiyat.value = str(kaynak["fiyat"] or 0)
+                    birim.value = kaynak["birim"] or "Adet"
+                    kdv.value = str((kaynak["kdv_orani"] or 0) * 100)
+                    if not acik.value:
+                        acik.value = kaynak["ad"]
+                    self.page.update()
+            secim.on_select = secim_degisti
+
+            def sil(e):
+                kalemler.remove(satir_kontrol)
+                kalem_kutusu.controls.remove(kutu)
+                self.page.update()
+            kutu = ft.Container(ft.Column([
+                ft.Row([secim, ft.IconButton(ft.Icons.DELETE_OUTLINE, tooltip="Kalemi sil", on_click=sil)]),
+                ft.Row([miktar, birim, fiyat, iskonto, kdv], wrap=True), acik,
+            ], spacing=6), padding=8, border=ft.Border.all(1, ft.Colors.GREY_300), border_radius=10)
+            satir_kontrol["kutu"] = kutu
+            kalemler.append(satir_kontrol)
+            kalem_kutusu.controls.append(kutu)
+
+        async def kaydet(e):
+            try:
+                body = {
+                    "belge_turu": belge_turu.value, "belge_no": belge_no.value or "",
+                    "tarih": iso_tarih(tarih_alani.value, "Belge tarihi"),
+                    "cari_id": int(cari.value) if cari.value else None,
+                    "siparis_id": int(siparis.value) if siparis.value else None,
+                    "aciklama": aciklama.value or "", "tevkifat": tevkifat.value,
+                    "avans_mahsup": sayi(avans.value, "Avans mahsubu") or 0,
+                    "stopaj_turu": stopaj.value, "gider_turu": gider_turu.value, "temin_usulu": temin_usulu.value,
+                    "kalemler": [],
+                }
+                if toplam_kontrol.value:
+                    body["kontrol_toplam"] = sayi(toplam_kontrol.value, "Belgedeki genel toplam")
+                for index, row in enumerate(kalemler, 1):
+                    body["kalemler"].append({
+                        ("urun_id" if tur == "Satış" else "malzeme_id"): int(row["secim"].value) if row["secim"].value else None,
+                        "aciklama": row["aciklama"].value or "", "miktar": sayi(row["miktar"].value, f"{index}. kalem miktarı"),
+                        "birim": row["birim"].value or "Adet", "birim_fiyat": sayi(row["fiyat"].value, f"{index}. kalem fiyatı"),
+                        "iskonto_orani": (sayi(row["iskonto"].value, f"{index}. iskonto") or 0) / 100,
+                        "kdv_orani": (sayi(row["kdv"].value, f"{index}. KDV") or 0) / 100,
+                    })
+                if fatura:
+                    body["surum"] = fatura["surum"]
+            except (TypeError, ValueError) as h:
+                self.bilgi("Eksik veya hatalı bilgi", str(h))
+                return
+            yol = f"/faturalar/{fatura['id']}" if fatura else "/faturalar"
+            if fatura:
+                sonuc = await self.cagir(self.api.put, yol, body)
+            else:
+                sonuc = await self.cagir(self.api.post, yol, body, tur=tur)
+            if sonuc is None:
+                return
+
+            async def sonra():
+                self.geri()
+                if fatura:
+                    self.geri()
+                await self.fatura_ekrani(tur)
+            metin = (f"{sonuc['belge_no']} • Matrah: {para(sonuc['matrah'])} TL • "
+                     f"Genel toplam: {para(sonuc['genel_toplam'])} TL")
+            if sonuc.get("uyarilar"):
+                metin += "\n\nDikkat:\n• " + "\n• ".join(sonuc["uyarilar"])
+            self.bilgi("Fatura kaydedildi", metin, sonra)
+
+        if fatura:
+            for mevcut in fatura["kalemler"]:
+                kalem_ekle(mevcut)
+        else:
+            kalem_ekle()
+        kontroller = [
+            ft.Row([belge_turu, belge_no], wrap=True), ft.Row([tarih_alani, cari], wrap=True),
+            ft.Row([siparis, tevkifat], wrap=True),
+        ]
+        if tur == "Satış":
+            kontroller.append(avans)
+        else:
+            kontroller.append(ft.Row([gider_turu, temin_usulu, stopaj], wrap=True))
+        kontroller += [aciklama, toplam_kontrol, baslik("Kalemler"), kalem_kutusu,
+                       ft.TextButton("Kalem ekle", icon=ft.Icons.ADD, on_click=lambda e: (kalem_ekle(), self.page.update())),
+                       ft.FilledButton("Değişiklikleri kaydet" if fatura else "Faturayı kaydet",
+                                      icon=ft.Icons.SAVE, on_click=kaydet, height=48)]
+        self.ac(self.gorunum("Faturayı düzenle" if fatura else ("Yeni satış faturası" if tur == "Satış"
+                                                                else "Yeni alış / gider belgesi"), kontroller,
+                             yardim="Satış Faturaları" if tur == "Satış" else "Alış / Gider Belgeleri"))
+
+    async def fatura_odeme_formu(self, fatura: dict):
+        hesap = ft.Dropdown(label="Kasa / banka", value="Banka (102)",
+                            options=[secenek(x, x) for x in ("Kasa (100)", "Banka (102)")])
+        tarih_alani = ft.TextField(label="Tarih (YYYY-AA-GG)", value=date.today().isoformat())
+        tutar = ft.TextField(label="Tutar (TL)", value=str(fatura["kalan"]), keyboard_type=ft.KeyboardType.NUMBER)
+        belge_no = ft.TextField(label="Makbuz / dekont no")
+        aciklama = ft.TextField(label="Açıklama")
+
+        async def kaydet(e):
+            try:
+                body = {"hesap": hesap.value, "tarih": iso_tarih(tarih_alani.value, "Ödeme tarihi"),
+                        "tutar": sayi(tutar.value, "Tutar"), "belge_no": belge_no.value or "",
+                        "aciklama": aciklama.value or ""}
+            except ValueError as h:
+                self.bilgi("Hatalı bilgi", str(h))
+                return
+            sonuc = await self.cagir(self.api.post, f"/faturalar/{fatura['id']}/odeme", body)
+            if sonuc is not None:
+                self.geri()
+                await self.fatura_detay(fatura["id"])
+        self.ac(self.gorunum("Tahsilat gir" if fatura["tur"] == "Satış" else "Ödeme gir", [
+            satir("Açık bakiye", para(fatura["kalan"]) + " TL", True),
+            hesap, tarih_alani, tutar, belge_no, aciklama,
+            ft.FilledButton("Kaydet", icon=ft.Icons.SAVE, on_click=kaydet, height=48),
+        ]))
+
+    async def dogrudan_temin_formu(self, fatura_id: int):
+        onbilgi = await self.cagir(self.api.get, f"/faturalar/{fatura_id}/dogrudan-temin")
+        if onbilgi is None:
+            return
+        konu = ft.TextField(label="İşin / ihtiyacın konusu", value=onbilgi["konu"])
+        tarih_alani = ft.TextField(label="Tarih (YYYY-AA-GG)", value=onbilgi["tarih"])
+        sayi_alani = ft.TextField(label="Belge no / sayı", value=onbilgi["sayi"])
+        gider = ft.Dropdown(label="Gider türü", value=onbilgi["gider_turu"],
+                            options=[secenek(x, x) for x in onbilgi["gider_turleri"]])
+        teslim = ft.TextField(label="Teslim yeri", value=onbilgi["teslim_yeri"])
+        yaklasik = ft.TextField(label="Yaklaşık maliyet (KDV hariç)", value=str(onbilgi["yaklasik_maliyet"]),
+                                keyboard_type=ft.KeyboardType.NUMBER)
+        gorevliler = ft.TextField(label="Görevliler (virgülle ayırınız)", value="")
+        kalem_kutusu, kalemler = ft.Column(spacing=6), []
+        firma_kutusu, firmalar = ft.Column(spacing=6), []
+
+        def kalem_ekle(mevcut=None):
+            ad = ft.TextField(label="Mal / hizmet adı", value=(mevcut or {}).get("ad") or "", expand=True)
+            miktar = ft.TextField(label="Miktar", value=str((mevcut or {}).get("miktar") or 1), width=100)
+            birim = ft.TextField(label="Birim", value=(mevcut or {}).get("birim") or "", width=100)
+            kayit = {"ad": ad, "miktar": miktar, "birim": birim}
+
+            def sil(e):
+                kalemler.remove(kayit)
+                kalem_kutusu.controls.remove(kutu)
+                self.page.update()
+            kutu = ft.Row([ad, miktar, birim, ft.IconButton(ft.Icons.DELETE_OUTLINE, on_click=sil)])
+            kayit["kutu"] = kutu
+            kalemler.append(kayit)
+            kalem_kutusu.controls.append(kutu)
+
+        def firma_ekle(mevcut=None):
+            ad = ft.TextField(label="Firma / kişi", value=(mevcut or {}).get("ad") or "", expand=True)
+            tutar = ft.TextField(label="Teklif (TL)", value=str((mevcut or {}).get("tutar") or ""), width=150,
+                                 keyboard_type=ft.KeyboardType.NUMBER)
+            kayit = {"ad": ad, "tutar": tutar}
+
+            def sil(e):
+                firmalar.remove(kayit)
+                firma_kutusu.controls.remove(kutu)
+                self.page.update()
+            kutu = ft.Row([ad, tutar, ft.IconButton(ft.Icons.DELETE_OUTLINE, on_click=sil)])
+            kayit["kutu"] = kutu
+            firmalar.append(kayit)
+            firma_kutusu.controls.append(kutu)
+
+        for satir_bilgisi in onbilgi["kalemler"]:
+            kalem_ekle(satir_bilgisi)
+        for teklif in onbilgi["firmalar"]:
+            firma_ekle(teklif)
+        while len(firmalar) < 3:
+            firma_ekle()
+
+        async def olustur(e):
+            try:
+                body = {
+                    "fatura_id": fatura_id, "konu": konu.value or "",
+                    "tarih": iso_tarih(tarih_alani.value, "Belge tarihi"), "sayi": sayi_alani.value or "",
+                    "gider_turu": gider.value, "teslim_yeri": teslim.value or "",
+                    "yaklasik_maliyet": sayi(yaklasik.value, "Yaklaşık maliyet"),
+                    "gorevliler": [x.strip() for x in (gorevliler.value or "").split(",") if x.strip()],
+                    "kalemler": [], "firmalar": [],
+                }
+                for i, row in enumerate(kalemler, 1):
+                    body["kalemler"].append({"ad": (row["ad"].value or "").strip(),
+                                             "miktar": sayi(row["miktar"].value, f"{i}. kalem miktarı"),
+                                             "birim": row["birim"].value or ""})
+                for i, row in enumerate(firmalar, 1):
+                    if (row["ad"].value or "").strip():
+                        body["firmalar"].append({"ad": row["ad"].value.strip(),
+                                                 "tutar": sayi(row["tutar"].value, f"{i}. firma teklifi")})
+            except ValueError as h:
+                self.bilgi("Eksik veya hatalı bilgi", str(h))
+                return
+            dosya = await self.cagir(self.api.post, "/belgeler/dogrudan-temin", body)
+            if dosya is None:
+                return
+            await self._dosyayi_kaydet(dosya, "Doğrudan temin belge paketini kaydet")
+            if dosya.get("uyarilar"):
+                self.bilgi("Doğrudan temin kontrolü", "\n• " + "\n• ".join(dosya["uyarilar"]))
+
+        self.ac(self.gorunum("Doğrudan temin belgeleri", [
+            mesaj_kutusu(["Tek PDF içinde firmalara gönderilecek teklif mektupları, piyasa fiyat araştırma tutanağı ve onay belgesi üretilir. "
+                          "En uygun teklif yaklaşık maliyet önerilir; belge paketini imzadan önce kontrol ediniz."], "bilgi"),
+            konu, ft.Row([tarih_alani, sayi_alani], wrap=True), gider, teslim, yaklasik, gorevliler,
+            baslik("Alınacak mal / hizmet"), kalem_kutusu,
+            ft.TextButton("Kalem ekle", icon=ft.Icons.ADD, on_click=lambda e: (kalem_ekle(), self.page.update())),
+            baslik("Teklif alınan firmalar"), firma_kutusu,
+            ft.TextButton("Firma ekle", icon=ft.Icons.ADD, on_click=lambda e: (firma_ekle(), self.page.update())),
+            ft.FilledButton("PDF belge paketini oluştur", icon=ft.Icons.PICTURE_AS_PDF,
+                            on_click=olustur, height=48),
+        ], yardim="Alış / Gider Belgeleri"))
 
     async def yedekleme_ekrani(self):
         v = await self.cagir(self.api.get, "/yedekler")
@@ -2531,6 +3469,68 @@ class Uygulama:
                                        ft.Text(f"Yeni: {d['yeni']}", color=ft.Colors.GREEN_800, selectable=True)))
         self.ac(self.gorunum("İşlem ayrıntısı", kontroller))
 
+    async def tanim_excel_ice_aktar(self, tur: str):
+        api = self.api
+        if api is None:
+            return
+        picker = ft.FilePicker()
+        self.page.overlay.append(picker)
+        self.page.update()
+        try:
+            dosyalar = await picker.pick_files(
+                dialog_title="Excel personel/öğrenci listesi seç",
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=["xlsx", "xlsm"],
+                allow_multiple=False,
+                with_data=True,
+            )
+            if not dosyalar:
+                return
+            dosya = dosyalar[0]
+            if dosya.size > 5 * 1024 * 1024 or not dosya.name.lower().endswith((".xlsx", ".xlsm")):
+                self.bilgi("Excel dosyası uygun değil", "Yalnızca en fazla 5 MB olan .xlsx veya .xlsm dosyalarını seçiniz.")
+                return
+            if dosya.bytes is None:
+                self.bilgi("Dosya okunamadı", "Excel dosyasının içeriği alınamadı.")
+                return
+            govde = {"dosya_adi": dosya.name,
+                     "icerik": base64.b64encode(dosya.bytes).decode("ascii")}
+        finally:
+            self.page.overlay.remove(picker)
+            self.page.update()
+        onizleme = await self.cagir(api.post, f"/tanimlar/{tur}/excel-onizle", govde)
+        if onizleme is None:
+            return
+        ozet = onizleme["ozet"]
+        if not ozet["aktarilacak"]:
+            self.bilgi("Aktarılacak kayıt yok",
+                       f"'{onizleme['sayfa']}' sayfasında {ozet['dosyadaki_kayit']} satır bulundu; "
+                       f"aktarılabilir kayıt yok (mevcut: {ozet['mevcut']}, eksik: {ozet['eksik']}, "
+                       f"sorunlu: {ozet['sorunlu']}, elenen: {ozet['elenen']}).")
+            return
+        satirlar = [
+            f"{r['ad']}: {r['durum']}" + (f" — {r['neden']}" if r.get("neden") else "")
+            for r in ozet["onizleme"]
+        ]
+        mesaj = (f"'{onizleme['sayfa']}' sayfasında {ozet['dosyadaki_kayit']} satır bulundu.\n"
+                 f"Aktarılacak: {ozet['aktarilacak']} • Mevcut: {ozet['mevcut']} • "
+                 f"Eksik: {ozet['eksik']} • Sorunlu: {ozet['sorunlu']} • Elenen: {ozet['elenen']}\n"
+                 f"Eşleşen sütunlar: {', '.join(ozet['eslesen_alanlar']) or '-'}")
+        if satirlar:
+            mesaj += "\n\nÖnizleme:\n" + "\n".join(satirlar)
+        if ozet["notlar"]:
+            mesaj += "\n\nUyarılar:\n" + "\n".join(ozet["notlar"][:8])
+
+        async def aktar():
+            sonuc = await self.cagir(api.post, f"/tanimlar/{tur}/excel-aktar", govde)
+            if sonuc is None:
+                return
+            self.bildir(f"{sonuc['eklenen']} kayıt Excel'den içe aktarıldı.")
+            self.geri()
+            await self.tanim_ekrani(tur)
+
+        self.sor("Excel içe aktarma önizlemesi", mesaj, aktar, "İçe aktar")
+
     async def tanim_ekrani(self, tur: str, ara: str = ""):
         api = self.api
         if api is None:
@@ -2544,6 +3544,10 @@ class Uygulama:
                                  self.tanim_ekrani, tur, e.control.value or ""))
         kontroller: list[ft.Control] = [arama]
         if sonuc["yazabilir"]:
+            if tur in ("personel", "ogrenci"):
+                kontroller.append(ft.OutlinedButton(
+                    "Excel'den İçe Aktar", icon=ft.Icons.UPLOAD_FILE,
+                    on_click=lambda e: self.page.run_task(self.tanim_excel_ice_aktar, tur)))
             kontroller.append(ft.FilledButton("Yeni kayıt", icon=ft.Icons.ADD,
                                               on_click=lambda e: self.page.run_task(self.tanim_formu, tur, alanlar)))
         for kayit in sonuc["kayitlar"]:
@@ -2648,7 +3652,12 @@ class Uygulama:
                 style=ft.ButtonStyle(color=ft.Colors.RED_700),
                 on_click=lambda e: self.sor("Kaydı sil", "Bu kayıt silinsin mi?", sil, "Sil")))
         kontroller.extend(eylemler)
-        self.ac(self.gorunum("Kaydı düzenle" if kayit else "Yeni kayıt", kontroller))
+        yardim = {
+            "bolum": "Bölüm / Alan / Atölyeler", "personel": "Personel", "ogrenci": "Öğrenciler",
+            "cari": "Cari Hesaplar", "malzeme": "Malzeme / Stok Kartları",
+            "urun": "Ürün / Hizmet ve Maliyet",
+        }.get(tur)
+        self.ac(self.gorunum("Kaydı düzenle" if kayit else "Yeni kayıt", kontroller, yardim=yardim))
 
     async def urun_maliyet_ekrani(self, urun_id: int):
         api = self.api

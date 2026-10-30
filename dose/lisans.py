@@ -16,7 +16,7 @@ from datetime import date, datetime
 
 ACIK_ANAHTAR = "ZyFB-uGBY2d-UQ6ztQ2ILEHG8y0BY6qDqylFR4Y_Alg"
 SATICI = "Derik MTAL Döner Sermaye İşletmesi"
-# Lisans penceresinde gösterilir; ör. "0482 000 00 00 • dose@ornek.meb.k12.tr"
+# Flet lisans ekranında gösterilir; ör. "0482 000 00 00 • dose@ornek.meb.k12.tr"
 SATICI_ILETISIM = ""
 ONEK = "DOSE1"
 DENEME_GUN = 30

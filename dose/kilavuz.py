@@ -572,12 +572,15 @@ SAYFA_YARDIMI: dict[str, tuple[str, list[str], list[str], str | None]] = {
         ["'＋ Yeni' ile bölüm ekleyin; ÜTP dağıtım yöntemini seçin."], [], "ilk_kurulum"),
     "Personel": (
         "Döner sermaye çalışmalarına katılan personelin kartları.",
-        ["'＋ Yeni' ile ekleyin ya da 'Excel'den İçe Aktar' kullanın."],
+        ["'＋ Yeni' ile ekleyin ya da Excel listesini başlık eşleştirme ve önizlemeden sonra içe aktarın. "
+         "Personel no/sicil, T.C. kimlik no, adı soyadı, unvan/görev/branş, IBAN ve telefon sütunları tanınır."],
         ["Hizmet sınıfı ve DÖSE görevi doğru seçilmelidir: aylık ücret tavanı ve ÜTP payı buna göre hesaplanır.",
          "Ödeme alacak kişinin kendi adına IBAN'ı girilmelidir."], "ilk_kurulum"),
     "Öğrenciler": (
         "Üretime katılan öğrencilerin kartları ve veli muvafakat durumları.",
-        ["'＋ Yeni' ile öğrenci ekleyin.", "Veli muvafakatnamesi imzalanınca 'veli muvafakat' kutusunu işaretleyip tarihini girin."],
+        ["'＋ Yeni' ile öğrenci ekleyin ya da okul no, T.C. kimlik no, adı soyadı, sınıf/şube ve IBAN sütunları bulunan "
+         "Excel listesini önizleme sonrası içe aktarın.",
+         "Veli muvafakatnamesi imzalanınca 'veli muvafakat' kutusunu işaretleyip tarihini girin."],
         ["Muvafakatnamesi olmayan öğrenci çalıştırılmaz, ona ücret ödenmez."], "ogrenci"),
     "Cari Hesaplar": (
         "Müşteriler (alıcılar) ve tedarikçiler (satıcılar). 'Cari' alışveriş yapılan kişi veya kurum demektir.",
@@ -608,7 +611,8 @@ SAYFA_YARDIMI: dict[str, tuple[str, list[str], list[str], str | None]] = {
     "Kasa / Banka": (
         "Döner sermayeye giren ve çıkan bütün paralar.",
         ["Gelen para için '＋ Giriş (tahsilat)', giden para için '－ Çıkış (ödeme)'.", "İşlem türünü ve bağlı faturayı seçin."],
-        ["Kasa eksiye düşemez.", "Hazine payı tahsilatlardan hesaplanır; tahsilatı eksiksiz ve zamanında girin."], "kasa"),
+        ["Hesap bakiyesi yetersizse çıkış için ayrıca açık onay gerekir; işlemi belgeye uygun kaydedin.",
+         "Hazine payı tahsilatlardan hesaplanır; tahsilatı eksiksiz ve zamanında girin."], "kasa"),
     "Stok Durumu ve Hareketleri": (
         "Malzemelerin eldeki miktarı ve giriş-çıkışları.",
         ["Alış faturası stoğa kendiliğinden girer; siparişe malzeme çıkışı 'Malzeme çıkışı' ile yapılır.",

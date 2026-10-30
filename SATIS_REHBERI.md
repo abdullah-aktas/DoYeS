@@ -68,13 +68,18 @@ alıp `signtool` ile hem `DOSE_Yonetim.exe` dosyasını hem kurulum dosyasını 
 
 ### Lisans verme adımları
 
-1. Okul programda **Lisans… → Bilgileri kopyala** düğmesine basar ve okul adıyla kurum kodunu size gönderir.
-2. `satici\lisans_uret.bat` dosyasını açın. Okul adını, kurum kodunu ve süreyi (1/2/3 yıl, süresiz veya özel
-   tarih) girin. Ücret ve fatura numarası da yazılırsa satış kaydınız tutulur. **Lisans üret** düğmesine basın.
-3. Oluşan anahtarı **Anahtarı kopyala** ile e-postaya yapıştırın veya `satici\lisanslar\<kurumkodu>_<no>.lic`
-   dosyasını gönderin.
-4. Okul **Lisans…** penceresinde anahtarı yapıştırır veya **Dosyadan yükle…** ile dosyayı seçer, sonra
-   **Etkinleştir** der.
+1. Okul Flet giriş ekranındaki **Lisansı görüntüle / etkinleştir** bölümünden okul adıyla kurum kodunu size gönderir.
+2. `satici\lisans_uret.bat` dosyasını çalıştırıp soruları yanıtlayın. Süre olarak 1/2/3 yıl, süresiz veya özel
+   tarih seçilebilir; ücret ve fatura bilgisi satış kaydına eklenir.
+3. Program lisans anahtarını ekrana yazar, `.lic` dosyasını oluşturur ve `satici\lisanslar.csv` satış kaydını günceller.
+   Anahtarı okul yetkilisine güvenli bir kanaldan iletin.
+4. Okul Flet giriş ekranındaki lisans bölümünde anahtarı yapıştırır veya `.lic` dosyasını yükleyip **Etkinleştir** der.
+
+Komut satırında etkileşimsiz üretim için:
+
+```powershell
+python satici\lisans_uret.py --okul "Derik MTAL" --kurum-kodu 765432 --sure 1 --ucret 2500 --fatura-no F-100
+```
 
 Yenileme için aynı okula yeni bitiş tarihli bir lisans üretip gönderin. Eski lisansın yerine geçer.
 Tüm satışlar `satici\lisanslar.csv` dosyasında tutulur. Bu dosya Excel'de açılabilir, onu da yedekleyin.
@@ -158,8 +163,8 @@ Sürüm **1.7.0** ile mobil giriş **kurum kodu + kullanıcı + şifre** ile yap
 | **A – Okul kendi sunucusu** | Okul PC: `DOSE_Mobil_Sunucu.exe` | Kurum kodu + kullanıcı + şifre + okul IP/HTTPS | Okulda (SQLite veya okul PG) |
 | **B – Satıcı barındırması (önerilen “her yerden”)** | Sizin VPS: `DOSE_Mobil_Sunucu.exe --coklu` | Kurum kodu + kullanıcı + şifre + sizin HTTPS geçit adresi | Sizin TR VPS (`okul_<kod>`) |
 
-Model B'de telefon asla okul Wi-Fi'sine bağlı olmak zorunda değildir; masaüstü de aynı PostgreSQL'e internetten bağlanır
-(Bağlantı ayarları → kurum kodundan doldur).
+Model B'de telefon, web ve masaüstü Flet istemcileri aynı HTTPS API geçidine bağlanır; PostgreSQL bağlantı bilgileri
+yalnız API sunucusunda yapılandırılır.
 
 ### 4.2 Çok okullu mobil geçit (Model B)
 
@@ -245,12 +250,12 @@ Lisans süresi dolunca mobilde de yalnız görüntüleme yapılır.
 
 1. Kurulum EXE → ilk giriş `admin` / `admin` → şifre değiştir.
 2. **Kurum ve Görevliler:** okul adı + kurum kodu.
-3. **Lisans…** etkinleştir.
-4. Barındırma: **Bağlantı ayarları → Merkezi sunucu → Kurum kodundan doldur** → şifreyi yapıştır → kaydet.
-   (Yerel tek PC ise bu adım yok.)
+3. Lisans gerekiyorsa giriş ekranındaki **Lisansı görüntüle / etkinleştir** düğmesini kullan.
+4. Barındırma varsa Flet istemcisinin giriş ekranında API/geçit adresini ve kurum kodunu gir; veritabanı parolası
+   istemciye verilmez.
 5. Kullanıcılar / personel / bölümler.
-6. Mobil: sunucu veya geçidi aç → telefonda kurum kodu + kullanıcı + şifre (+ adres) → onay / fazla çalışma dene.
-7. İşlem kaydında kaynağın “Mobil” olduğunu doğrula.
+6. API sunucusunu veya geçidi aç → Flet masaüstü, web veya telefonda kurum kodu + kullanıcı + şifreyle giriş yap.
+7. İşlem kaydında istemci ve cihaz bilgisini doğrula.
 
 ### 5.4 Güncelleme
 

@@ -3,6 +3,7 @@ kodlanabilir olmalıdır. python -m unittest tests.test_mobil"""
 import asyncio
 import dataclasses
 import inspect
+from io import BytesIO
 import sys
 import tempfile
 import unittest
@@ -222,6 +223,20 @@ class MobilArayuz(unittest.TestCase):
             await u.giris_yap()
             self.assertTrue(u.hata_alani.visible)
             self.assertIn("Kurum kodu", u.l_hata.value)
+            self.assertIsNotNone(self.bul(ft.OutlinedButton, "Lisansı görüntüle / etkinleştir"))
+        self.calistir(senaryo())
+
+    def test_flet_giris_ekranindan_lisans_bilgisi_acilir(self):
+        async def senaryo():
+            self.s = SahteSayfa()
+            u = U.Uygulama(self.s, "http://test")
+            with mock.patch.object(self.s, "run_task"):
+                await u.giris_ekrani()
+            u.t_kurum.value = "765432"
+            await self.tetikle(self.bul(ft.OutlinedButton, "Lisansı görüntüle / etkinleştir"))
+            self.assertIn("Lisans", metin(self.s.dialoglar[-1].title))
+            self.assertIn("Deneme", " ".join(metin(c) for c in gez(self.s.dialoglar[-1].content)))
+            self.hata_dialogu_yok()
         self.calistir(senaryo())
 
     def test_ana_ekran_genislikte_masaustu_gezinmesine_gecer(self):
@@ -234,7 +249,7 @@ class MobilArayuz(unittest.TestCase):
             self.assertTrue({"Stok Durumu", "Kasa / Banka", "Satış Faturaları", "Alış / Gider Belgeleri",
                              "Denetim Formu", "İşlem Kaydı", "Mevzuat Rehberi"}.issubset(etiketler))
 
-            for etiket, ekran in (("Stok Durumu", "Stok durumu"), ("Kasa / Banka", "Kasa / banka"),
+            for etiket, ekran in (("Stok Durumu", "Stok / Ambar"), ("Kasa / Banka", "Kasa / banka"),
                                   ("Satış Faturaları", "Satış faturaları"),
                                   ("Alış / Gider Belgeleri", "Alış / gider belgeleri"),
                                   ("Denetim Formu", "Denetim formları"), ("İşlem Kaydı", "İşlem kaydı")):
@@ -261,6 +276,125 @@ class MobilArayuz(unittest.TestCase):
             self.assertTrue(u.nav.visible)
             self.assertIs(u.ana.navigation_bar, u.nav)
             self.assertEqual(u.nav.selected_index, 1)
+        self.calistir(senaryo())
+
+    def test_tum_masaustu_sayfalari_flet_gezinmesinde_acilir(self):
+        from dose.kilavuz import SAYFA_YARDIMI
+
+        async def senaryo():
+            u = await self.giris("sistem", 1280)
+            sayfa_modulleri = set(api.MOBIL_MODULLER) - {"denetim"}
+            for modul in sayfa_modulleri:
+                ad = api.MOBIL_MODULLER[modul]
+                self.assertIn(ad, SAYFA_YARDIMI)
+                self.assertIn(ad, U.SAYFA_YARDIM_ESLEME.values())
+
+            diger_modulleri = {"yapilacaklar", "uyum", "kilavuz", "rehber", "kullanicilar"}
+            dogrudan_moduller = {sekme[0] for sekme in u.masaustu_sekmeler}
+            self.assertTrue(sayfa_modulleri <= dogrudan_moduller | diger_modulleri)
+
+            await u.diger_sekmesi()
+            diger_basliklari = {
+                "Bugün ne yapmalıyım?", "Mevzuat uyum denetimi", "Nasıl yaparım? (adım adım)",
+                "Mevzuat Rehberi", "Kullanıcılar ve roller",
+            }
+            gorunen_basliklar = {
+                kontrol.title.value for kontrol in self.hepsi(ft.ListTile)
+                if isinstance(kontrol.title, ft.Text) and kontrol.title.value
+            }
+            self.assertTrue(diger_basliklari <= gorunen_basliklar)
+
+            for i, (modul, _etiket, _ikon, _islev) in enumerate(u.masaustu_sekmeler):
+                if modul == "diger":
+                    continue
+                u.rail.selected_index = i
+                await self.tetikle(u.rail, "on_change")
+                self.hata_dialogu_yok()
+
+        self.calistir(senaryo())
+
+    def test_sayman_kasa_flet_yeni_hareket_formunu_ve_bakiye_onayini_gosterir(self):
+        async def senaryo():
+            u = await self.giris("ayse")
+            await u.kasa_ekrani(0)
+            self.assertIsNotNone(u.ana.floating_action_button)
+            self.assertTrue(any("Kasa (100) bakiyesi" in metin(c) for c in gez(self.s.views[-1])))
+
+            await u.kasa_formu()
+            yon = self.bul(ft.Dropdown, "Yön")
+            tur = self.bul(ft.Dropdown, "İşlem türü")
+            onay = self.bul(ft.Checkbox, "Bakiye yetersiz")
+            self.assertFalse(onay.visible)
+            yon.value = "Çıkış"
+            await self.tetikle(yon, "on_select")
+            self.assertTrue(onay.visible)
+            self.assertIn("Vergi Ödemesi", {secenek.text for secenek in tur.options})
+            self.s.update()
+            self.hata_dialogu_yok()
+        self.calistir(senaryo())
+
+    def test_flet_sayfa_baglamli_yardimi_api_icerigini_gosterir(self):
+        async def senaryo():
+            u = await self.giris("ayse")
+            await u.kasa_ekrani(0)
+            await self.tetikle(self.bul(ft.IconButton, "Bu sayfa hakkında yardım"))
+            self.assertIn("Yardım — Kasa / Banka", metin(self.s.dialoglar[-1].title))
+            self.assertTrue(any("Hazine payı" in metin(c) for c in gez(self.s.dialoglar[-1].content)))
+            self.bul(ft.FilledButton, "Adım adım rehber", kok=self.s.dialoglar[-1])
+            self.hata_dialogu_yok()
+        self.calistir(senaryo())
+
+    def test_sayman_stok_flet_giris_cikis_formlarini_gosterir(self):
+        async def senaryo():
+            u = await self.giris("ayse")
+            await u.stok_ekrani(YIL, "hareketler")
+            self.bul(ft.Dropdown, "Görünüm")
+            self.bul(ft.OutlinedButton, "Excel'e aktar")
+
+            await u.stok_hareket_formu("Giriş")
+            sifir_onay = self.bul(ft.Checkbox, "Sıfır fiyatlı")
+            self.assertTrue(sifir_onay.visible)
+            self.assertFalse(self.bul(ft.TextField, "Birim fiyat").disabled)
+
+            await u.stok_hareket_formu("Çıkış")
+            self.assertFalse(self.bul(ft.Checkbox, "Sıfır fiyatlı").visible)
+            self.assertTrue(self.bul(ft.TextField, "Birim fiyat").disabled)
+            self.assertTrue(any("ağırlıklı ortalama maliyetle" in metin(c).lower()
+                                for c in gez(self.s.views[-1])))
+            self.s.update()
+            self.hata_dialogu_yok()
+        self.calistir(senaryo())
+
+    def test_sayman_personel_excel_aktarimini_onizleyip_onaylar(self):
+        async def senaryo():
+            from openpyxl import Workbook
+
+            u = await self.giris("ayse")
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["Sicil No", "Adı Soyadı", "Unvan"])
+            ws.append(["FLET-EXCEL-01", "Flet Excel Personeli", "Öğretmen"])
+            akim = BytesIO()
+            wb.save(akim)
+            icerik = akim.getvalue()
+
+            class SahteDosyaSecici:
+                async def pick_files(self, **_kwargs):
+                    return [SimpleNamespace(name="personel.xlsx", size=len(icerik), bytes=icerik)]
+
+            picker = SahteDosyaSecici()
+            with mock.patch.object(U.ft, "FilePicker", return_value=picker):
+                await u.tanim_ekrani("personel")
+                self.assertIsNotNone(self.bul(ft.OutlinedButton, "Excel'den İçe Aktar"))
+                await self.tetikle(self.bul(ft.OutlinedButton, "Excel'den İçe Aktar"))
+                self.assertIn("Excel içe aktarma önizlemesi", metin(self.s.dialoglar[-1].title))
+                self.assertIn("Flet Excel Personeli", metin(self.s.dialoglar[-1].content))
+                await self.tetikle(self.bul(ft.FilledButton, "İçe aktar", kok=self.s.dialoglar[-1]))
+            kayit = self.db.q1("SELECT * FROM personel WHERE sicil_no = 'FLET-EXCEL-01'")
+            self.assertIsNotNone(kayit)
+            self.assertEqual(kayit["ad_soyad"], "Flet Excel Personeli")
+            self.db.sil("personel", kayit["id"])
+            self.hata_dialogu_yok()
         self.calistir(senaryo())
 
     def test_kullanici_yonetimi_flet_ekranindan_hesap_ekler_ve_yetki_tablosunu_gosterir(self):

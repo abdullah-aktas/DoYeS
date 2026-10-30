@@ -3,30 +3,35 @@
 ## 1. Programı çalıştırma (tek bilgisayar)
 
 **Kurulum dosyasıyla (önerilen):** `DOSE_Yonetim_Kurulum_<sürüm>.exe` dosyasına çift tıklayın ve sihirbazı
-izleyin. Program masaüstüne ve Başlat menüsüne eklenir. Windows "bilgisayarınızı korudu" uyarısı verirse
-**Ek bilgi → Yine de çalıştır** deyin. Yeni sürüm aynı şekilde eskisinin üzerine kurulur. Veriler korunur;
-program kaldırılsa bile `veri` klasörü silinmez.
+izleyin. Flet istemcisi masaüstüne, API sunucusu ve sunucu kısayolu Başlat menüsüne eklenir. Windows "bilgisayarınızı
+korudu" uyarısı verirse **Ek bilgi → Yine de çalıştır** deyin. Veriler korunur; program kaldırılsa bile `veri`
+klasörü silinmez.
 
-**Python ile (geliştirme):** `D:\DÖSE` klasöründeki `baslat.bat` dosyasına çift tıklayın. Eksik paketler ilk açılışta kendiliğinden kurulur.
-Komut satırından çalıştırmak için:
+**Python ile (geliştirme):** ilk kullanımda önce API sunucusunu başlatın:
 
 ```powershell
 cd D:\DÖSE
 python -m pip install -r requirements.txt   # yalnız ilk seferde
+python sunucu_main.py
+```
+
+İkinci terminalde Flet masaüstü istemcisini açın:
+
+```powershell
+cd D:\DÖSE
 python main.py
 ```
 
-**Taşınabilir klasörle:** `exe_olustur.bat` çalıştırıldığında `dist\DOSE_Yonetim` klasörü oluşur. Bu klasörün
-tamamını başka bir bilgisayara kopyalayıp `DOSE_Yonetim.exe` ile de açabilirsiniz.
+**Taşınabilir klasörle:** `exe_olustur.bat` sonrasında hedef bilgisayarda önce
+`MobilSunucu\DOSE_Mobil_Sunucu.exe`, sonra `DOSE_Yonetim.exe` dosyasını başlatın.
 
-**İlk giriş:** kullanıcı adı `admin`, şifre `admin`. Girişte yeni şifre belirlemeniz istenir.
+**İlk giriş:** sunucu ilk veritabanı kurulumunda `admin / admin` hesabını oluşturur; ilk istemci girişinde yeni şifre
+belirlenmesi istenir.
 
-**Lisans:** Program ilk 30 gün deneme olarak tam sürüm çalışır. Lisans almak için giriş ekranındaki **Lisans…**
-düğmesine basın ve **Bilgileri kopyala** ile okul adını ve kurum kodunu satıcıya gönderin. Size gelen anahtarı
-aynı pencereye yapıştırın veya `.lic` dosyasını **Dosyadan yükle…** ile seçip **Etkinleştir** deyin. Sunucu
-modunda lisans bir kez girilir ve bütün bilgisayarlarda geçerli olur. Süre dolarsa program salt okunur çalışır:
-kayıtlar görüntülenir, raporlanır ve yedeklenir, ancak yeni kayıt yapılamaz. Lisans kurum koduna bağlıdır; lisans
-girildikten sonra **Kurum ve Görevliler** sayfasındaki kurum kodu değiştirilemez.
+**Lisans:** Program ilk 30 gün deneme olarak tam sürüm çalışır. Flet giriş ekranındaki **Lisansı görüntüle /
+etkinleştir** düğmesini açın; okul adı ve kurum kodunu satıcıya iletin. Gelen anahtarı yapıştırın veya `.lic` dosyasını
+seçip **Etkinleştir** deyin. Lisans sunucu veritabanında tutulur ve aynı kuruma bağlı tüm istemcilerde geçerlidir.
+Süre dolarsa veriler görüntülenebilir ve yedeklenebilir, ancak yeni kayıt/değişiklik yapılamaz.
 
 ## 2. Birden çok bilgisayarda ortak çalışma (internet üzerinden)
 
@@ -140,71 +145,58 @@ doldurabilir; aynı maddenin çakışan kaydı diğer kullanıcının verisini e
 ### 2.3 Her bilgisayarda (istemci) yapılacaklar
 
 1. Programı kurulum dosyasıyla kurun (veya `dist\DOSE_Yonetim` klasörünü kopyalayın).
-2. Programı açın. Giriş ekranında **Bağlantı ayarları…** düğmesine basın.
-3. **Merkezi sunucu** seçeneğini işaretleyip bilgileri girin:
-   - Sunucu adresi: sunucunun IP'si veya alan adı
-   - Port: `5432`
-   - Veritabanı: `dose`
-   - Kullanıcı: `dose_app`
-   - Şifre: veritabanı şifresi
-   - SSL: “Zorunlu”
-4. **Bağlantıyı sına** ile kontrol edin, ardından **Kaydet ve bağlan** deyin.
-5. Kendi kullanıcı adınız ve şifrenizle giriş yapın.
+2. Okul ağındaki API sunucusunu başlatın veya satıcının verdiği HTTPS geçit adresini edinin.
+3. Flet uygulamasını açın; kurum kodu, kullanıcı adı ve şifreyle giriş yapın.
+4. Sunucu otomatik bulunmazsa **Gelişmiş: sunucu adresi…** alanına `http://sunucu-adresi:8765` veya
+   `https://gecit-adresi` yazın.
 
-- Bağlantı şifresi Windows hesabınıza bağlı olarak şifrelenip `veri\baglanti.json` dosyasında saklanır. Bu dosya
-  başka bilgisayara kopyalanırsa şifrenin orada yeniden girilmesi gerekir.
-- Boş sunucu veritabanına **ilk** bağlanışta tablolar kurulur ve `admin / admin` kullanıcısı oluşur. Hemen giriş
-  yapıp şifreyi değiştirin.
-- Sunucuya ulaşılamazsa program açılışta bağlantı ayarları ekranını gösterir.
+Masaüstü, Android ve web istemcileri yalnız FastAPI'ye bağlanır. PostgreSQL/Supabase bağlantı dizesi, veritabanı
+parolası ve `service_role` anahtarı istemciye verilmez; bunlar API sunucusunda yapılandırılır.
 
 ### 2.4 Daha önce yerel modda girilmiş verileri sunucuya taşıma
 
 Veriler bir bilgisayarda yerel modda girildiyse o bilgisayarda şu adımları izleyin:
 
-1. Bağlantı ayarlarından sunucuya geçin.
-2. `admin` (Sistem Yöneticisi) ile giriş yapın.
-3. **Yedekleme / İşlem Kaydı → Bu bilgisayardaki yerel verileri sunucuya aktar** düğmesine basın.
+1. Eski uygulamanın SQLite veritabanı dosyasını (`veri\dose.db`) API sunucusuna erişebilen bilgisayara kopyalayın.
+2. Flet masaüstü istemcisinde yetkili kullanıcıyla giriş yapın.
+3. **Yedekleme / İşlem Kaydı → Dosyadan yedek yükle / yerel veriyi aktar** ile `.db` dosyasını yükleyin.
+4. Yüklenen dosyayı seçip **Geri yükle** deyin ve istenen onay metnini girin.
 
-Bu işlem sunucudaki mevcut verilerin yerine yerel verileri yazar. İşlemden önce sunucu verisinin yedeği alınır. Genellikle
-yalnız ilk geçişte bir kez yapılır.
+Geri yükleme sunucudaki verileri değiştirir. İşlem öncesi otomatik yedek alınır; yine de önce ayrıca yedek indirip
+doğru okul/veritabanını seçtiğinizi doğrulayın.
 
 ### 2.5 Aynı anda çalışma ve işlem izi
 
 - Başka bir bilgisayarda veya telefonda yapılan kayıt, açık olan ekranlara birkaç saniye içinde kendiliğinden yansır.
 - İki kişi aynı kaydı aynı anda düzenlerse, ikinci kaydeden kişinin değişikliği **üzerine yazılmaz**. Program
   “Bu kayıt siz düzenlerken … tarafından değiştirildi” uyarısı verir ve kaydın güncel hâlini yükler.
-- Her işlem **İşlem Kaydı**na yazılır: kullanıcı, ad soyad, rol, tarih-saat, bilgisayar veya telefon adı, kaynak
-  (Masaüstü / Mobil) ve değişen alanların eski ile yeni değerleri. Kayıt kullanıcı, kaynak ve tarihe göre süzülebilir.
+- Her işlem **İşlem Kaydı**na yazılır: kullanıcı, rol, tarih-saat, cihaz ve değişen alanların eski/yeni değerleri.
+  Kayıt kullanıcı, kaynak ve tarihe göre süzülebilir.
 
-## 3. Telefon, tablet ve web tarayıcı (DÖSE Mobil)
+## 3. Flet masaüstü, telefon, tablet ve web istemcileri
 
 ```
- [Telefon / tablet]  ─┐
- [Tarayıcı]          ─┼── kurum kodu + kullanıcı + şifre ──> [DÖSE Mobil Sunucu veya Geçit]
-                      │         (okul PC'si veya satıcı VPS)
-                      └──────────────────────────────────> [Aynı kurum veritabanı]
- [Masaüstü PCler] ──── PostgreSQL / yerel DB ─────────────>┘
+ [Flet masaüstü] ─┐
+ [Android / web] ─┼── HTTPS / LAN ──> [FastAPI sunucusu] ──> [SQLite / PostgreSQL / Supabase]
+ [Tablet] ────────┘
 ```
 
-Telefonlar veritabanına doğrudan bağlanmaz. **Kurum kodu + kullanıcı adı + şifre** ile giriş yapılır; veritabanı
-şifresi telefona hiç girmez. Aynı kurum kodu okul Wi-Fi'sinden, evden veya sahadan (geçit / VPN / HTTPS) kullanılır.
-Her işlem masaüstündeki yetki, bölüm kısıtı, onay akışı ve mevzuat denetimlerinin aynısından geçer; işlem kaydına
-“Mobil” ve cihaz adıyla yazılır.
+Hiçbir istemci veritabanına doğrudan bağlanmaz. **Kurum kodu + kullanıcı adı + şifre** ile giriş yapılır; veritabanı
+parolası istemciye girilmez. Masaüstü, telefon ve tarayıcı aynı Flet arayüzünü, rol yetkilerini ve iş akışlarını
+kullanır.
 
 **Önkoşul:** Masaüstünde **Kurum ve Görevliler** sayfasında MEB kurum kodu girilmiş olmalıdır (lisans da bu koda bağlıdır).
 
-**Mobilde yapılabilenler:** özet panel ve uyarılar; onay bekleyen belgeleri inceleme, uygun görme, onaylama, iade
-etme; iş talebi (sipariş taslağı) girme ve siparişleri izleme; öğretmenin kendi fazla çalışmasını günlük puantajla
-girip onaya göndermesi; stok, kasa/banka, satış ve alış belgeleri listeleri; işlem kaydı. Muhasebe fişi, fatura
-kesme, bordro ödeme ve tanım işleri masaüstünde yapılır.
+**Flet istemcilerinde:** sipariş, fatura, kasa/banka ve stok hareketi oluşturma/düzenleme, personel ödemeleri,
+muhasebe, raporlar, yasal yükümlülükler, resmi belgeler, yıl sonu ÜTP, yedekleme, Excel içe/dışa aktarma, kullanıcı
+yönetimi ve mevzuat işlevleri rol/yetkiye göre sunulur.
 
 ### 3.1 Sunucuyu başlatma (okul kendi sunucusu)
 
-1. Veritabanına erişebilen ve sürekli açık kalan bir bilgisayar seçin (yerel modda verinin durduğu bilgisayar,
-   sunucu modunda okuldaki herhangi bir bilgisayar).
+1. Veritabanına erişebilen ve sürekli açık kalan bir bilgisayar seçin.
 2. Başlat menüsündeki **DÖSE Mobil Sunucu** kısayolunu (program klasöründe `MobilSunucu\DOSE_Mobil_Sunucu.exe`)
-   çalıştırın. Pencerede telefonlara yazılacak adres ve kurum kodu görünür, ör.
-   `http://192.168.1.10:8765`. Pencere açık kaldığı sürece mobil erişim çalışır.
+   çalıştırın. Pencerede istemcilere yazılacak adres ve kurum kodu görünür, ör.
+   `http://192.168.1.10:8765`. Pencere açık kaldığı sürece Flet istemcileri erişebilir.
 3. İlk çalıştırmada Windows Güvenlik Duvarı izin isterse **Özel ağlar** için izin verin. Elle açmak için yönetici
    PowerShell'de:
 
@@ -311,4 +303,4 @@ Kapalıyken yetkili kullanıcı belgeyi tek adımda onaylar. Her iki durumda da 
 | `psycopg kurulu değil` | `python -m pip install -r requirements.txt` |
 | `Lisans anahtarı biçimi hatalı` | Anahtarın tamamını (`DOSE1.` ile başlar) kopyalayın veya `.lic` dosyasını yükleyin |
 | `Bu lisans … kurum kodlu okul içindir` | Kurum ve Görevliler sayfasındaki kurum kodu yanlış girilmiş; düzeltip yeniden deneyin veya satıcıya doğru kodu bildirin |
-| `salt okunur çalışıyor` | Deneme veya lisans süresi doldu; Lisans… penceresinden yeni lisans girin |
+| `salt okunur çalışıyor` | Deneme veya lisans süresi doldu; Flet giriş ekranındaki lisans bölümünden yeni lisans girin |

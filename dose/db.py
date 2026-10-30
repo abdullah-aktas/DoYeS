@@ -344,7 +344,7 @@ def _yazma_denetle(motor, sql: str):
         if tablo is not None and tablo not in SERBEST_TABLOLAR:
             from .lisans import SaltOkunurHata
             raise SaltOkunurHata("Lisans veya deneme süresi dolduğu için program salt okunur çalışıyor; kayıt eklenemez "
-                                 "ve değiştirilemez. Lisans girmek için giriş ekranındaki 'Lisans…' düğmesini kullanın.")
+                                 "ve değiştirilemez. Lisans girmek için Flet giriş ekranındaki lisans düğmesini kullanın.")
 
 
 # ---------------------------------------------------------------- SQLite

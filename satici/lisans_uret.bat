@@ -9,12 +9,9 @@ if not exist ozel_anahtar.pem (
     echo Acik anahtar programa yazildi. EXE paketini yeniden olusturmayi unutmayin.
     pause
 )
-where pythonw >nul 2>nul
-if errorlevel 1 (
-    python lisans_uret.py
-) else (
-    start "" pythonw lisans_uret.py
-)
+python lisans_uret.py %*
+if errorlevel 1 goto hata
+if "%~1"=="" pause
 exit /b 0
 
 :hata

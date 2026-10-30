@@ -71,9 +71,11 @@ def kart_malzemesi(db, kalemler: list[dict]) -> float:
     return yuvarla(toplam)
 
 
-def siparis_taslagi_kaydet(db, veri: dict, bolum_kisiti: int | None = None) -> tuple[int, str, list[str]]:
+def siparis_taslagi_kaydet(db, veri: dict, bolum_kisiti: int | None = None,
+                           siparis_id: int | None = None) -> tuple[int, str, list[str]]:
     """Mobilden gelen iş talebini 'Teklif' durumunda sipariş olarak kaydeder. Malzeme maliyet kartından, işçilik yasal
-    üst sınırdan hesaplanır. (sipariş id, sipariş no, uyarılar) döndürür; kayda engel hata varsa IslemHatasi verir."""
+    üst sınırdan hesaplanır. Mevcut taslağı güncellemek için siparis_id verilir.
+    (sipariş id, sipariş no, uyarılar) döndürür; kayda engel hata varsa IslemHatasi verir."""
     tarih = veri.get("tarih") or date.today().isoformat()
     p = db.parametreler(int(tarih[:4]))
     hatalar, kalemler = [], []
@@ -105,6 +107,9 @@ def siparis_taslagi_kaydet(db, veri: dict, bolum_kisiti: int | None = None) -> t
         hatalar.append("Ücret esası geçersiz.")
     if hatalar:
         raise IslemHatasi("\n".join(hatalar))
+    mevcut = db.q1("SELECT * FROM siparis WHERE id = ?", (siparis_id,)) if siparis_id else None
+    if siparis_id and not mevcut:
+        raise IslemHatasi("Sipariş bulunamadı (silinmiş olabilir).")
 
     v = {"tarih": tarih, "cari_id": veri["cari_id"], "bolum_id": bolum_id, "konu": konu, "ucret_esasi": esas,
          "sozlesme_bedeli": yuvarla(sum(kalem_tutari(k)[2] for k in kalemler)), "kdv_orani": p["kdv_genel"],
@@ -126,8 +131,18 @@ def siparis_taslagi_kaydet(db, veri: dict, bolum_kisiti: int | None = None) -> t
             uyarilar.append(f"'{u['ad']}' birim fiyatı ({para(net)} TL) tespit edilen satış fiyatının ({para(u['satis_fiyati'])} TL) "
                             "altında; işletme aleyhine müşteri lehine indirim yapılamaz (Çalışma Yönergesi md.26/g, md.29/a).")
     with db.islem():
-        v["siparis_no"] = db.sonraki_no("siparis", int(tarih[:4]), "SIP")
-        sid = db.ekle("siparis", v)
+        if siparis_id:
+            sid = siparis_id
+            v.pop("durum")
+            for alan in ("pesinat", "baslama_tarihi", "kabul_tarihi", "ogrenci_uygulamasi",
+                         "sozlesme_suresi_ay", "bakanlik_izni", "faaliyet_orani"):
+                v[alan] = mevcut[alan]
+            v["siparis_no"] = mevcut["siparis_no"]
+            db.guncelle("siparis", sid, v)
+            db.ex("DELETE FROM siparis_kalem WHERE siparis_id = ?", (sid,))
+        else:
+            v["siparis_no"] = db.sonraki_no("siparis", int(tarih[:4]), "SIP")
+            sid = db.ekle("siparis", v)
         for k in kalemler:
             db.ekle("siparis_kalem", dict(k, siparis_id=sid), log=False)
     return sid, v["siparis_no"], uyarilar

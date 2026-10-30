@@ -7,12 +7,9 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tests.test_senaryo import UYARILAR, YIL, test_kaynagi  # noqa: E402
-
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from tests.test_support import YIL, test_kaynagi  # noqa: E402
 
 from dose import belgeler, mevzuat, onay  # noqa: E402
 from dose import db as dbm  # noqa: E402
@@ -54,15 +51,10 @@ class GunTurleri(unittest.TestCase):
 class FazlaCalismaDenetimi(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.app = QApplication.instance() or QApplication([])
         cls.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.db = d = dbm.baslat(test_kaynagi(Path(cls.tmp.name)))
-        from dose.ui import ortak
-        ortak.CIKTILAR = Path(cls.tmp.name)
-        ortak.Oturum.yil = YIL
-        ortak.Oturum.kullanici = d.q1("SELECT * FROM kullanici WHERE kullanici_adi = 'admin'")
         d.kullanici = "admin"
-        cls.admin = ortak.Oturum.kullanici
+        cls.admin = d.q1("SELECT * FROM kullanici WHERE kullanici_adi = 'admin'")
         cls.bolum = d.ekle("bolum", {"ad": "Mobilya"})
         cls.ogretmen = d.ekle("personel", {"ad_soyad": "Deniz Öğretmen", "dose_gorevi": "Öğretmen", "bolum_id": cls.bolum,
                                            "hizmet_sinifi": "Eğitim ve Öğretim Hizmetleri"})
@@ -81,7 +73,6 @@ class FazlaCalismaDenetimi(unittest.TestCase):
         cls.tmp.cleanup()
 
     def setUp(self):
-        UYARILAR.clear()
         onay.akis_ayarla(False)
 
     def _v(self, **k):
