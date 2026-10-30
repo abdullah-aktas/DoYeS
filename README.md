@@ -72,11 +72,13 @@ Kurulum EXE eskisinin üzerine kurulur; `veri` klasörü korunur.
 
 ## Marka (logo / ikon)
 
-Tüm arayüzler ortak dosyaları kullanır:
+Flet istemcisi aşağıdaki görsel kaynaklarını kullanır:
 
-- `dose/gorsel/logo.png` — giriş ve marka  
-- `dose/gorsel/ikon.png` / `ikon.ico` — pencere ve uygulama ikonu  
-- Mobil kopya: `mobil/assets/` (APK derlemesinde aynı görseller)
+- `mobil/assets/logo.png` — giriş ekranı markası
+- `mobil/assets/ikon.png` — Android/iOS uygulama ikonu
+- `dose/gorsel/ikon.ico` — Windows EXE ve kurulum ikonu
+- `dose/gorsel/kurulum_buyuk.bmp` / `kurulum_kucuk.bmp` — kurulum sihirbazı görselleri
+- `mobil/assets/store/icon-512.png` / `icon-1024.png` — mağaza listeleme görselleri
 
 ## Klasör özeti
 

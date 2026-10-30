@@ -4,7 +4,7 @@ version = "1.7.3"
 description = "DÖSE Yönetim mobil uygulaması: onaylar, iş talepleri, fazla çalışma, özet raporlar"
 authors = [{ name = "Derik MTAL Döner Sermaye İşletmesi" }]
 requires-python = ">=3.10"
-dependencies = ["flet==0.82.2", "certifi"]
+dependencies = ["flet==1.0.5", "certifi"]
 
 [tool.flet]
 org = "tr.k12.meb.derikmtal"
