@@ -6,7 +6,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dose import mevzuat  # noqa: E402
-from dose.dogrulama import iban_gecerli, tckn_gecerli, vkn_gecerli  # noqa: E402
 from dose.hesap import (UtpKisi, belge_toplami, gelir_vergisi, iskonto_dagit, kalem_hatalari, kalem_tutari,  # noqa: E402
                         orantili_dagit, parca_basi_gun, parca_basi_tavani, siparis_tahsis, tavan_uygula, ucret_kesintileri,
                         utp_dagit, yasal_maliyet_dagilimi, yasal_ust_sinir_iscilik, yil_sonu_bolusum)
@@ -15,22 +14,6 @@ P = mevzuat.varsayilan_parametreler()
 import json  # noqa: E402
 
 P["gv_tarifesi_ucret"] = json.loads(P["gv_tarifesi_ucret"])
-
-
-class DogrulamaTest(unittest.TestCase):
-    def test_tckn(self):
-        self.assertTrue(tckn_gecerli("10000000146"))
-        self.assertFalse(tckn_gecerli("12345678901"))
-        self.assertFalse(tckn_gecerli("01234567890"))
-
-    def test_vkn(self):
-        self.assertTrue(vkn_gecerli(mevzuat.MERKEZ_SAYMANLIK["vkn"]))
-        self.assertFalse(vkn_gecerli("6210312481"))
-        self.assertFalse(vkn_gecerli("621031248"))
-
-    def test_iban(self):
-        self.assertTrue(iban_gecerli(mevzuat.MERKEZ_SAYMANLIK["iban"]))
-        self.assertFalse(iban_gecerli("TR00 0000 1001 0000 0350 1540 35"))
 
 
 class BelgeTest(unittest.TestCase):

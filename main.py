@@ -1,8 +1,8 @@
 """DÖSE Flet masaüstü uygulamasının başlangıç noktası."""
 import flet as ft
 
-from mobil.uygulama import calistir
+from istemci.uygulama import VARLIK_KLASORU, calistir
 
 
 if __name__ == "__main__":
-    ft.run(calistir())
+    ft.run(calistir(), assets_dir=VARLIK_KLASORU)

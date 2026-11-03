@@ -1,0 +1,10 @@
+{
+  "name": "dose-supabase-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests\\cekirdek.test.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14"
+  }
+}

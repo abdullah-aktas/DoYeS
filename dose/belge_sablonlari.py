@@ -64,4 +64,37 @@ SABLONLAR = {
         "Okulumuz Döner Sermaye İşletmesi bünyesinde yürütülen üretim çalışmalarına öğrencinizin katılabilmesi ve parça başı ücret "
         "ödenebilmesi için Yönetmeliğin 8 inci maddesi gereğince yazılı muvafakatinizin alınması gerekmektedir. Ekte sunulan "
         "muvafakatnamenin doldurularak okul müdürlüğüne teslim edilmesini rica ederim."),
+    "Üç aylık faaliyet raporu üst yazısı (md.48)": (
+        "Üç Aylık Faaliyet Raporu",
+        "MİLLÎ EĞİTİM BAKANLIĞI Destek Hizmetleri Genel Müdürlüğü İşletmeler Daire Başkanlığına",
+        "Okulumuz Döner Sermaye İşletmesinin {yil} yılı {donem} dönemi faaliyet raporu, DÖSE Yönergesi md.48 gereğince ekte "
+        "sunulmuştur. Rapor, sipariş, satış/alış, tahsilat, parça başı, fazla çalışma ve hazine payı özetlerini içerir.\n\n"
+        "Bilgilerinize arz ederim."),
+    "Aylık mizan gönderim üst yazısı (md.47)": (
+        "Aylık Mizan",
+        "MİLLÎ EĞİTİM BAKANLIĞI Destek Hizmetleri Genel Müdürlüğü İşletmeler Daire Başkanlığına",
+        "Okulumuz Döner Sermaye İşletmesinin {ay}/{yil} dönemi aylık mizanı, Yönerge md.47 gereğince ekte sunulmuştur. "
+        "Gönderim süresi izleyen ayın 5'idir.\n\nBilgilerinize arz ederim."),
+    "Sayıştay yıl sonu belge paketi üst yazısı": (
+        "Yıl Sonu Sayıştay Paketi",
+        "SAYIŞTAY BAŞKANLIĞINA",
+        "Okulumuz Döner Sermaye İşletmesinin {yil} yılına ilişkin kesin hesap, mizan, kasa/banka mutabakatı, stok sayım tutanağı "
+        "ve ÜTP dağıtım özetleri ekte sunulmuştur. Bu paket DÖSE iç kaydından üretilmiş olup GİB e-Fatura veya banka API "
+        "entegrasyonu değildir.\n\nGereğini arz ederim."),
+    "Doğrudan temin piyasa fiyat araştırma tutanağı": (
+        "Piyasa Fiyat Araştırma Tutanağı",
+        "DOĞRUDAN TEMİN (4734 md.22)",
+        "Okulumuz Döner Sermaye İşletmesinin ihtiyacı olan mal/hizmet için {ay}/{yil} döneminde piyasadan fiyat "
+        "araştırması yapılmıştır. En az üç kaynaktan alınan teklifler / fiyatlar değerlendirilmiş; ihtiyacın "
+        "doğrudan temin limiti içinde kaldığı ve bölünmediği görülmüştür.\n\n"
+        "Mal/hizmet: ........................\nYaklaşık maliyet (KDV hariç): ............ TL\n"
+        "Uygun görülen teklif: ........................\n\nKomisyon / görevliler:\n"
+        "1- ........................\n2- ........................\n3- ........................"),
+    "Doğrudan temin harcama yetkilisi onay belgesi": (
+        "Doğrudan Temin Onayı",
+        "MÜDÜRLÜK MAKAMINA",
+        "Okulumuz Döner Sermaye İşletmesinin aşağıda yazılı mal/hizmet ihtiyacının 4734 sayılı Kanun md.22 "
+        "kapsamında doğrudan temin usulüyle karşılanması; yaklaşık maliyetin KDV hariç ilgili yıl limitleri "
+        "içinde olduğu dikkate alınarak uygun görülmesini olurlarınıza arz ederim.\n\n"
+        "OLUR\n...../...../{yil}\nHarcama Yetkilisi"),
 }
