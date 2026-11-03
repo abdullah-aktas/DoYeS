@@ -1,5 +1,8 @@
 # DÖSE Yönetim — Teknik Servis ve Programcı Kılavuzu
 
+Son kullanıcı: [KULLANIM.md](KULLANIM.md). Yeni yazılımcı onboarding (ortam, iş akışı, PR): [GELISTIRICI.md](GELISTIRICI.md).
+Satış paketi / kurum teslimi: [SATIS_VE_TESLIM.md](SATIS_VE_TESLIM.md).
+
 ## 1. Mimari
 
 ```

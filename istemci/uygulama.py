@@ -7,23 +7,24 @@ import os
 import flet as ft
 
 try:
-    from . import ayar, takvim
+    from . import ayar, takvim, tema
     from . import tanimlar as T
     from .supa import Supa, SupaHata
+    from .tema import (ANA_RENK, GIRIS_GRADYANI, KENAR, MARKA_VURGU, METIN, METIN_IKINCIL, YUZEY, ZEMIN,
+                       aciklama, baslik, deneme_rozeti, giris_kart, ozellik_satiri)
 except ImportError:
     import ayar
     import takvim
+    import tema
     import tanimlar as T
     from supa import Supa, SupaHata
+    from tema import (ANA_RENK, GIRIS_GRADYANI, KENAR, MARKA_VURGU, METIN, METIN_IKINCIL, YUZEY, ZEMIN,
+                      aciklama, baslik, deneme_rozeti, giris_kart, ozellik_satiri)
 
 OTURUM_ANAHTARI = "dose.oturum"
 GENIS_EKRAN = 900
 VARLIK_KLASORU = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
-
-ANA_RENK = "#1f4e79"
-MARKA_VURGU = "#d48f2a"
-ZEMIN = ft.Colors.GREY_50
-CIZGI = ft.Colors.GREY_200
+CIZGI = KENAR
 
 SAYFALAR = [
     ("ana", "Ana ekran", ft.Icons.HOME, None),
@@ -76,44 +77,21 @@ def uygulama_ikonu(boyut: int = 40) -> ft.Control:
                     error_content=ft.Icon(ft.Icons.ACCOUNT_BALANCE, size=boyut, color=ANA_RENK))
 
 
-GIRIS_GRADYANI = ft.LinearGradient(begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT,
-                                   colors=["#0d2c4a", ANA_RENK, "#2f6aa3"])
 OZELLIKLER = [
-    (ft.Icons.SHOPPING_CART, "Sipariş ve onay akışı", ft.Colors.AMBER_300),
-    (ft.Icons.RECEIPT_LONG, "Fatura, stok ve yevmiye", ft.Colors.LIGHT_GREEN_300),
-    (ft.Icons.ACCOUNT_BALANCE_WALLET, "Kasa / banka takibi", ft.Colors.CYAN_200),
-    (ft.Icons.VERIFIED_USER, "Rol bazlı yetki ve işlem kaydı", ft.Colors.PINK_100),
+    (ft.Icons.SHOPPING_CART, "Sipariş ve onay akışı", "#f5c76a"),
+    (ft.Icons.RECEIPT_LONG, "Fatura, stok ve yevmiye", "#9fd4a8"),
+    (ft.Icons.ACCOUNT_BALANCE_WALLET, "Kasa / banka takibi", "#8ec5d6"),
+    (ft.Icons.VERIFIED_USER, "Rol bazlı yetki ve işlem kaydı", "#e8b4c8"),
 ]
 
 
 def kart(*kontroller: ft.Control, genislik_kolon=None) -> ft.Container:
-    return ft.Container(ft.Column(list(kontroller), spacing=14, tight=True,
-                                  horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
-                        padding=24, bgcolor=ft.Colors.WHITE, border_radius=22,
-                        shadow=ft.BoxShadow(blur_radius=30, spread_radius=1,
-                                            color=ft.Colors.with_opacity(0.25, ft.Colors.BLACK)),
-                        col=genislik_kolon or {"xs": 12, "sm": 10, "md": 7, "lg": 5, "xl": 4})
+    return giris_kart(*kontroller, genislik_kolon=genislik_kolon)
 
 
 def ortali(*kontroller: ft.Control) -> ft.Control:
     """Centered white card on the colourful background: fills a phone screen, stays readable on a desktop."""
-    return ft.ResponsiveRow([kart(*kontroller)], alignment=ft.MainAxisAlignment.CENTER)
-
-
-def deneme_rozeti() -> ft.Container:
-    return ft.Container(ft.Row([ft.Icon(ft.Icons.CARD_GIFTCARD, color=ft.Colors.BROWN_900, size=18),
-                                ft.Text("1 ay ücretsiz deneme", weight=ft.FontWeight.BOLD, color=ft.Colors.BROWN_900)],
-                               spacing=6, tight=True),
-                        bgcolor=ft.Colors.AMBER_300, border_radius=20,
-                        padding=ft.Padding.symmetric(horizontal=14, vertical=6))
-
-
-def baslik(metin: str, boyut: int = 22) -> ft.Text:
-    return ft.Text(metin, size=boyut, weight=ft.FontWeight.BOLD)
-
-
-def aciklama(metin: str) -> ft.Text:
-    return ft.Text(metin, size=13, color=ft.Colors.ON_SURFACE_VARIANT)
+    return ft.ResponsiveRow([giris_kart(*kontroller)], alignment=ft.MainAxisAlignment.CENTER)
 
 
 class Uygulama:
@@ -126,7 +104,8 @@ class Uygulama:
         self.ekran = None
         self.son_log: int | None = None
         self.genis: bool | None = None
-        self.govde = ft.Container(expand=True, padding=ft.Padding.all(12))
+        self.govde = ft.Container(expand=True, padding=ft.Padding.symmetric(horizontal=16, vertical=12),
+                                  bgcolor=ZEMIN)
         self.menu_kutu: ft.Container | None = None
         self._dongu: asyncio.Task | None = None
 
@@ -197,13 +176,15 @@ class Uygulama:
 
     async def basla(self):
         self.page.title = "DÖSE Yönetim"
-        self.page.theme = ft.Theme(color_scheme_seed=ANA_RENK)
+        self.page.theme = tema.uygulama_temasi()
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.bgcolor = ZEMIN
         self.page.padding = 0
         self.page.on_resize = self._boyut_degisti
         try:
-            self.page.window.icon = "ikon.ico"
+            ikon = os.path.join(os.environ.get("FLET_ASSETS_DIR") or VARLIK_KLASORU, "ikon.ico")
+            if os.path.isfile(ikon):
+                self.page.window.icon = ikon
         except Exception:
             pass
         yenileme = None
@@ -300,38 +281,36 @@ class Uygulama:
             "1 ay ücretsiz dene", icon=ft.Icons.ROCKET_LAUNCH, height=48,
             style=ft.ButtonStyle(bgcolor=ft.Colors.AMBER_400, color=ft.Colors.BROWN_900, icon_color=ft.Colors.BROWN_900),
             on_click=lambda _: self.kayit_ekrani(e_posta.value, deneme=True))
-        form = kart(
+        form = giris_kart(
             ft.Container(logo(), alignment=ft.Alignment.CENTER),
-            ft.Text("Hoş geldiniz", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_900,
+            ft.Text("Hoş geldiniz", size=26, weight=ft.FontWeight.BOLD, color=METIN,
                     text_align=ft.TextAlign.CENTER),
-            ft.Text("Kendi e-postanız ve şifrenizle giriş yapın.", color=ft.Colors.BLUE_GREY_600,
+            ft.Text("Kendi e-postanız ve şifrenizle giriş yapın.", color=METIN_IKINCIL,
                     text_align=ft.TextAlign.CENTER),
             e_posta, sifre, durum, dugme, tekrar_gonder,
             ft.Row([ft.TextButton("Hesap aç", on_click=lambda _: self.kayit_ekrani(e_posta.value)),
                     ft.TextButton("Şifremi unuttum", on_click=lambda _: self.sifre_ekrani(e_posta.value))],
                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN, wrap=True),
             ft.Row([ft.Container(ft.Divider(color=CIZGI), expand=True),
-                    ft.Text("veya", size=12, color=ft.Colors.BLUE_GREY_400),
+                    ft.Text("veya", size=12, color=METIN_IKINCIL),
                     ft.Container(ft.Divider(color=CIZGI), expand=True)]),
             deneme,
             ft.Text("Ödeme bilgisi istenmez. Süre bitince kayıtlarınız silinmez, salt okunur kalır.",
-                    size=11, color=ft.Colors.BLUE_GREY_500, text_align=ft.TextAlign.CENTER),
+                    size=11, color=METIN_IKINCIL, text_align=ft.TextAlign.CENTER),
             genislik_kolon={"xs": 12, "sm": 10, "md": 6, "lg": 5, "xl": 4})
         tanitim = ft.Container(ft.Column([
-            ft.Container(logo(150, 80), bgcolor=ft.Colors.WHITE, border_radius=18, padding=12,
-                         width=180, alignment=ft.Alignment.CENTER),
-            ft.Text("DÖSE Yönetim", size=34, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+            ft.Container(logo(160, 86), bgcolor=YUZEY, border_radius=18, padding=14,
+                         width=200, alignment=ft.Alignment.CENTER,
+                         shadow=ft.BoxShadow(blur_radius=16, color=ft.Colors.with_opacity(0.2, "#000000"))),
+            ft.Text("DÖSE Yönetim", size=36, weight=ft.FontWeight.BOLD, color="#ffffff"),
             ft.Text("Döner sermaye işletmenizin siparişten muhasebeye tüm süreçleri tek ekranda, "
                     "bulutta ve güvenle.", size=15, color="#d6e6f5"),
             deneme_rozeti(),
-            *[ft.Row([ft.Container(ft.Icon(ikon, color=ANA_RENK, size=20), bgcolor=renk,
-                                   border_radius=12, width=38, height=38, alignment=ft.Alignment.CENTER),
-                      ft.Text(metin, color=ft.Colors.WHITE, size=14, weight=ft.FontWeight.W_500)], spacing=12)
-              for ikon, metin, renk in OZELLIKLER],
-        ], spacing=16, tight=True), padding=ft.Padding.symmetric(horizontal=8, vertical=12),
+            *[ozellik_satiri(ikon, metin, renk) for ikon, metin, renk in OZELLIKLER],
+        ], spacing=18, tight=True), padding=ft.Padding.symmetric(horizontal=8, vertical=12),
             col={"xs": 12, "md": 6, "lg": 5, "xl": 4})
         self.sayfayi_kur(ft.ResponsiveRow([tanitim, form], alignment=ft.MainAxisAlignment.CENTER,
-                                          vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=32, run_spacing=24))
+                                          vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=36, run_spacing=24))
 
     def kayit_ekrani(self, eposta: str = "", deneme: bool = False):
         e_posta = ft.TextField(label="E-posta", value=eposta, keyboard_type=ft.KeyboardType.EMAIL)
@@ -494,19 +473,19 @@ class Uygulama:
             return tikla
 
         def ust_stil(secili: bool) -> ft.ButtonStyle:
-            return ft.ButtonStyle(color=ft.Colors.WHITE, icon_color=ft.Colors.WHITE,
-                                  bgcolor=ft.Colors.TEAL_600 if secili else ANA_RENK,
-                                  padding=ft.Padding.symmetric(horizontal=14, vertical=10),
-                                  shape=ft.RoundedRectangleBorder(radius=0))
+            return ft.ButtonStyle(color="#ffffff", icon_color="#ffffff",
+                                  bgcolor="#163a5c" if secili else ANA_RENK,
+                                  padding=ft.Padding.symmetric(horizontal=14, vertical=12),
+                                  shape=ft.RoundedRectangleBorder(radius=8))
 
         def ust_baslik(etiket: str, secili: bool) -> ft.Text:
-            return ft.Text(etiket, color=ft.Colors.WHITE,
+            return ft.Text(etiket, color="#ffffff",
                            weight=ft.FontWeight.BOLD if secili else ft.FontWeight.W_500)
 
         ogeler: list[ft.Control] = []
         ana = gorunur["ana"]
         ogeler.append(ft.MenuItemButton(content=ust_baslik(ana[1], self.sayfa == "ana"),
-                                        leading=ft.Icon(ana[2], color=ft.Colors.WHITE),
+                                        leading=ft.Icon(ana[2], color="#ffffff"),
                                         style=ust_stil(self.sayfa == "ana"), on_click=ac("ana")))
         for grup, grup_ikonu, anahtarlar in MENU_GRUPLARI:
             sayfalar = [gorunur[a] for a in anahtarlar if a in gorunur]
@@ -515,20 +494,21 @@ class Uygulama:
             grup_secili = any(s[0] == self.sayfa for s in sayfalar)
             alt = [ft.MenuItemButton(
                 content=ft.Text(e, weight=ft.FontWeight.BOLD if a == self.sayfa else None,
-                                color=ANA_RENK if a == self.sayfa else ft.Colors.BLUE_GREY_900),
-                leading=ft.Icon(i, color=ANA_RENK if a == self.sayfa else ft.Colors.BLUE_GREY_600),
-                style=ft.ButtonStyle(bgcolor=ft.Colors.TEAL_50 if a == self.sayfa else ft.Colors.WHITE,
+                                color=ANA_RENK if a == self.sayfa else METIN),
+                leading=ft.Icon(i, color=ANA_RENK if a == self.sayfa else METIN_IKINCIL),
+                style=ft.ButtonStyle(bgcolor=tema.SECILI_DOLGU if a == self.sayfa else YUZEY,
                                      padding=ft.Padding.symmetric(horizontal=16, vertical=12)),
                 on_click=ac(a)) for a, e, i, _ in sayfalar]
             ogeler.append(ft.SubmenuButton(content=ust_baslik(grup, grup_secili),
-                                           leading=ft.Icon(grup_ikonu, color=ft.Colors.WHITE),
+                                           leading=ft.Icon(grup_ikonu, color="#ffffff"),
                                            style=ust_stil(grup_secili),
-                                           menu_style=ft.MenuStyle(bgcolor=ft.Colors.WHITE, elevation=4),
+                                           menu_style=ft.MenuStyle(bgcolor=YUZEY, elevation=6),
                                            controls=alt))
         cubuk = ft.MenuBar(controls=ogeler, style=ft.MenuStyle(
-            bgcolor=ANA_RENK, elevation=0, padding=ft.Padding.all(0),
+            bgcolor=ANA_RENK, elevation=0, padding=ft.Padding.symmetric(horizontal=8, vertical=4),
             shape=ft.RoundedRectangleBorder(radius=0)))
-        return ft.Row([cubuk], scroll=ft.ScrollMode.AUTO, spacing=0)
+        return ft.Container(ft.Row([cubuk], scroll=ft.ScrollMode.AUTO, spacing=0),
+                            bgcolor=ANA_RENK, padding=ft.Padding.symmetric(horizontal=4, vertical=2))
 
     @staticmethod
     def _lisans_rozeti(okul: dict) -> ft.Control:
@@ -553,27 +533,28 @@ class Uygulama:
         cikis = ft.IconButton(ft.Icons.LOGOUT, tooltip="Çıkış yap", icon_color=ANA_RENK, on_click=self.cikis)
         kullanici = ft.Column([
             ft.Text(self.ben.get("ad_soyad") or self.ben.get("eposta") or "", size=13, weight=ft.FontWeight.W_600,
-                    color=ft.Colors.BLUE_GREY_900),
-            ft.Text(self.ben.get("rol") or "", size=11, color=ft.Colors.BLUE_GREY_600)],
+                    color=METIN),
+            ft.Text(self.ben.get("rol") or "", size=11, color=METIN_IKINCIL)],
             spacing=0, horizontal_alignment=ft.CrossAxisAlignment.END, visible=self.genis)
         baslik_satiri = ft.Container(ft.Row([
             logo(120, 44) if self.genis else uygulama_ikonu(36),
             ft.Column([ft.Text("DÖSE Yönetim", size=18 if self.genis else 15, weight=ft.FontWeight.BOLD,
-                               color=ft.Colors.BLUE_GREY_900),
-                       ft.Text(okul.get("ad", ""), size=12, color=ft.Colors.BLUE_GREY_600,
+                               color=METIN),
+                       ft.Text(okul.get("ad", ""), size=12, color=METIN_IKINCIL,
                                max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)], spacing=0, expand=True),
             kullanici,
             self._lisans_rozeti(okul),
             ft.Icon(ft.Icons.ACCOUNT_CIRCLE, color=ANA_RENK, size=30, visible=self.genis),
             cikis,
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=ft.Padding.symmetric(horizontal=16, vertical=8), bgcolor=ft.Colors.WHITE)
+            padding=ft.Padding.symmetric(horizontal=16, vertical=10), bgcolor=YUZEY,
+            border=ft.Border.only(bottom=ft.BorderSide(1, KENAR)))
         self.menu_kutu = ft.Container(self._menu_cubugu(), bgcolor=ANA_RENK)
         self.sayfa_ikonu = ft.Icon(ft.Icons.HOME, color=ANA_RENK)
         self.sayfa_basligi = ft.Text(SAYFA_ADI.get(self.sayfa, "DÖSE"), size=18, weight=ft.FontWeight.BOLD,
-                                     color=ft.Colors.BLUE_GREY_900)
+                                     color=METIN)
         sayfa_satiri = ft.Container(ft.Row([self.sayfa_ikonu, self.sayfa_basligi], spacing=10),
-                                    padding=ft.Padding.only(left=16, right=16, top=14, bottom=2))
+                                    padding=ft.Padding.only(left=20, right=16, top=12, bottom=0), bgcolor=ZEMIN)
         self.page.appbar = None
         self.page.drawer = None
         self.page.controls.clear()

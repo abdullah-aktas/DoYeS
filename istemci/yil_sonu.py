@@ -316,13 +316,18 @@ class YilSonuEkrani(Ekran):
     def _ciz(self):
         engelli = self.form is not None or self.islemde
         yillar = [(str(y), str(y)) for y in range(takvim.bugun_istanbul().year, 2019, -1)]
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         c: list[ft.Control] = [
-            ft.Row([ft.Text("Yıl sonu kâr dağıtımı / ÜTP", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    secim_kutusu("Yıl", yillar, self.yil, bos=False, on_select=self._yil_degisti),
-                    ft.FilledButton("Yeni cetvel", visible=self.sayman and not self.veri.get("kayit"),
-                                    disabled=engelli, on_click=lambda _: self._ac()),
-                    ft.IconButton(ft.Icons.REFRESH, disabled=self.islemde,
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))], wrap=True),
+            sayfa_baslik_satiri("Yıl sonu kâr dağıtımı / ÜTP", [
+                secim_kutusu("Yıl", yillar, self.yil, bos=False, on_select=self._yil_degisti),
+                ft.FilledButton("Yeni cetvel", visible=self.sayman and not self.veri.get("kayit"),
+                                disabled=engelli, on_click=lambda _: self._ac()),
+                ft.IconButton(ft.Icons.REFRESH, disabled=self.islemde,
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.EVENT_AVAILABLE),
             ft.Text("Cetveli sayman hazırlar; harcama yetkilisi (Okul Müdürü) onaylar. Onayda SHÇEK, kapanış ve "
                     "dağıtım yevmiyeleri oluşur. GİB/banka API’si yoktur.", size=12),
         ]

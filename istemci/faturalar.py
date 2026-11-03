@@ -12,12 +12,14 @@ try:
     from .ekranlar import Ekran, secim_kutusu, uyari_seridi
     from .finans import hesap_secenekleri, kayit_sonrasi_yenile, para
     from .supa import SupaHata
+    from .tema import sayfa_baslik_satiri
 except ImportError:
     import takvim
     import tanimlar as T
     from ekranlar import Ekran, secim_kutusu, uyari_seridi
     from finans import hesap_secenekleri, kayit_sonrasi_yenile, para
     from supa import SupaHata
+    from tema import sayfa_baslik_satiri
 
 
 class SatisSatiri(TypedDict):
@@ -427,14 +429,14 @@ class FaturaEkrani(Ekran):
 
     def _ciz(self):
         kontroller: list[ft.Control] = [
-            ft.Row([ft.Text("Fatura kayıtları", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.FilledButton("Yeni satış", icon=ft.Icons.ADD, visible=self.yazabilir, disabled=self.ust is not None,
-                                    on_click=lambda _: self._yeni("Satış")),
-                    ft.FilledButton("Yeni alış", icon=ft.Icons.ADD, visible=self.yazabilir, disabled=self.ust is not None,
-                                    on_click=lambda _: self._yeni("Alış")),
-                    ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile",
-                                  disabled=self.islemde,
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))], wrap=True),
+            sayfa_baslik_satiri("Fatura kayıtları", [
+                ft.FilledButton("Yeni satış", icon=ft.Icons.ADD, visible=self.yazabilir, disabled=self.ust is not None,
+                                on_click=lambda _: self._yeni("Satış")),
+                ft.FilledButton("Yeni alış", icon=ft.Icons.ADD, visible=self.yazabilir, disabled=self.ust is not None,
+                                on_click=lambda _: self._yeni("Alış")),
+                ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.RECEIPT_LONG),
             ft.Text("Buradaki kayıt GİB'e e-Fatura göndermez. Vergi oranlarını ve hesaplarını sayman doğrular."),
         ]
         if self.ust is not None:

@@ -27,7 +27,11 @@ mizan çıktıları, resmi yazı şablonları ve denetim formu.
 ```powershell
 pip install -r requirements.txt
 python main.py
+# veya sıcak yenileme ile:
+flet run -a istemci/assets
 ```
+
+Logo/ikonlar `istemci/assets` içindedir; `flet run` için `-a istemci/assets` gerekir (`python main.py` bunu kendisi bağlar).
 
 İstemci: `istemci/ayar.py` veya `DOSE_SUPABASE_URL` / `DOSE_SUPABASE_ANAHTAR`.
 
@@ -55,4 +59,4 @@ docs/            → kurulum, satıcı ve teknik kılavuzlar
 | `tests/` | Birim ve uçtan uca testler |
 | `docs/` | Kılavuzlar |
 
-[Kurulum](docs/KURULUM.md) · [Satıcı](docs/SATIS_REHBERI.md) · [Teknik](docs/TEKNIK_SERVIS_KILAVUZU.md)
+[Kullanım](docs/KULLANIM.md) · [Kurulum](docs/KURULUM.md) · [Satış ve kuruma teslim](docs/SATIS_VE_TESLIM.md) · [Satıcı SQL](docs/SATIS_REHBERI.md) · [Geliştirici](docs/GELISTIRICI.md) · [Teknik servis](docs/TEKNIK_SERVIS_KILAVUZU.md)

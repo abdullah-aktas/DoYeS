@@ -122,11 +122,14 @@ class StokEkrani(Ekran):
     def _ciz(self):
         yeni = ft.FilledButton("Yeni stok hareketi", icon=ft.Icons.ADD, on_click=self._yeni,
                                visible=self.yazabilir, disabled=self.form is not None or self.islemde)
-        ust = ft.Row([ft.Text("Stok durumu ve hareketleri", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                      yeni, ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile",
-                                          disabled=self.islemde,
-                                          on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
-                     wrap=True)
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
+        ust = sayfa_baslik_satiri("Stok durumu ve hareketleri", [
+            yeni, ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
+                                on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                                 ft.Icons.SWAP_VERT)
         kontroller: list[ft.Control] = [
             ust,
             ft.Text("Giriş ve çıkışın toplam maliyetini ve karşı hesabını sayman belirler. "
@@ -264,12 +267,17 @@ class HesapEkrani(Ekran):
     def _ciz(self):
         hesaplar = {h["kod"]: h["ad"] for h in self.veri["hesaplar"]}
         vergi = {h["tur"]: h for h in self.veri["vergi_hesaplari"]}
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         kontroller: list[ft.Control] = [
-            ft.Row([ft.Text("Muhasebe hesapları", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.FilledButton("Hesap tanımla", icon=ft.Icons.ADD, visible=self.yazabilir,
-                                    on_click=lambda _: self._hesap_dialog()),
-                    ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile",
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))], wrap=True),
+            sayfa_baslik_satiri("Muhasebe hesapları", [
+                ft.FilledButton("Hesap tanımla", icon=ft.Icons.ADD, visible=self.yazabilir,
+                                on_click=lambda _: self._hesap_dialog()),
+                ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile",
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.ACCOUNT_TREE),
             ft.Text("Tevkifat ve stopaj hesapları otomatik seçilmez. Hesap kodunun ve kullanımının uygunluğunu "
                     "yetkili sayman doğrulamalıdır."),
             ft.Text("Vergi hesapları", size=18, weight=ft.FontWeight.BOLD),
@@ -345,10 +353,15 @@ class YevmiyeEkrani(Ekran):
         self._ciz()
 
     def _ciz(self):
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         kontroller: list[ft.Control] = [
-            ft.Row([ft.Text("Yevmiye / mizan", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile",
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))]),
+            sayfa_baslik_satiri("Yevmiye / mizan", [
+                ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile",
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.MENU_BOOK),
             ft.Text("Mizan", size=18, weight=ft.FontWeight.BOLD),
         ]
         for s in self.mizan:

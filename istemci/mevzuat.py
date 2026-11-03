@@ -182,14 +182,17 @@ class MevzuatEkrani(Ekran):
         self._ciz()
 
     def _ciz(self):
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         kontroller: list[ft.Control] = [
-            ft.Row([ft.Text("Merkez parametre yayını" if self.merkez else "Okul parametre doğrulaması",
-                            size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.FilledButton("Yeni yayın", icon=ft.Icons.ADD, visible=self.merkez,
-                                    disabled=self.form is not None or self.islemde, on_click=self._yeni),
-                    ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
-                   wrap=True),
+            sayfa_baslik_satiri("Merkez parametre yayını" if self.merkez else "Okul parametre doğrulaması", [
+                ft.FilledButton("Yeni yayın", icon=ft.Icons.ADD, visible=self.merkez,
+                                disabled=self.form is not None or self.islemde, on_click=self._yeni),
+                ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.GAVEL),
             ft.Text("Burada sipariş maliyet ve işçilik tahsis oranlarının yasal alt/üst sınırları yayımlanır. "
                     "Gelir vergisi oranı, damga vergisi, asgari ücret, peşin vergi ve SHÇEK payı her parça başı "
                     "hakedişte ayrıca girilir ve hakediş onayıyla dondurulur."),

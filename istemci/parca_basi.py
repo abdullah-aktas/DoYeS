@@ -641,12 +641,17 @@ class ParcaBasiEkrani(Ekran):
 
     def _ciz(self):
         engelli = self.form is not None or self.islemde
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         kontroller: list[ft.Control] = [
-            ft.Row([ft.Text("Parça başı hakediş (Yön. md.8)", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.FilledButton("Yeni hakediş", icon=ft.Icons.ADD, visible=self.hazirlayabilir,
-                                    disabled=engelli or not self.veri["siparisler"], on_click=lambda _: self._ac()),
-                    ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))], wrap=True),
+            sayfa_baslik_satiri("Parça başı hakediş (Yön. md.8)", [
+                ft.FilledButton("Yeni hakediş", icon=ft.Icons.ADD, visible=self.hazirlayabilir,
+                                disabled=engelli or not self.veri["siparisler"], on_click=lambda _: self._ac()),
+                ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.HANDYMAN),
             ft.Text("Akış: Alan Şefi hazırlar → Teknik Müdür Yardımcısı uygundur → Okul Müdürü olur → Sayman bankadan "
                     "öder. Onayda 720/335/360, ödemede 335/102 yevmiyesi otomatik oluşur.", size=12),
         ]

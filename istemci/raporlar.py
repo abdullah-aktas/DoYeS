@@ -199,8 +199,12 @@ class RaporlarEkrani(Ekran):
                     f"FC {para(d.get('fazla_calisma'))} · Hazine {para(d.get('hazine'))}"))
             for d in self.faaliyet.get("donemler") or []
         ]
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         self.kontrol.controls = [
-            ft.Text("Raporlar", size=20, weight=ft.FontWeight.BOLD),
+            sayfa_baslik_satiri("Raporlar", ikon=ft.Icons.ASSESSMENT),
             ft.Text("Yıllık özet, üç aylık faaliyet (md.48) ve Bakanlık aylık mizan (md.47). GİB gönderimi yoktur."),
             ft.Row([
                 ft.Dropdown(label="Yıl", options=[ft.dropdown.Option(k, t) for k, t in yillar],

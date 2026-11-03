@@ -98,8 +98,12 @@ class MaliyetEkrani(Ekran):
     def _ciz(self):
         urunler = [(str(u["id"]), u["ad"]) for u in self.veri.get("urunler") or []]
         yaz = bool(self.veri.get("yazabilir"))
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         c: list[ft.Control] = [
-            ft.Text("Maliyet / fiyat tespit", size=20, weight=ft.FontWeight.BOLD),
+            sayfa_baslik_satiri("Maliyet / fiyat tespit", ikon=ft.Icons.CALCULATE),
             ft.Text("Ürün kartına bağlı maliyet kalemleri. Satış fiyatı ürün tanımındadır; burada maliyet özeti tutulur."),
             secim_kutusu("Ürün *", urunler, self.urun_id, on_select=self._urun_sec),
         ]

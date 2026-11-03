@@ -73,12 +73,50 @@ AD_BASLIKLARI = ["adı soyadı", "adı ve soyadı", "ad soyad", "adsoyad", "isim
 PERSONEL_ICE_AKTARMA = {
     "sicil_no": ["personel no", "sicil", "id"], "tckn": TCKN_BASLIKLARI,
     "ad_soyad": AD_BASLIKLARI + ["personel adı"],
-    "kadro_unvani": ["unvan", "görevi", "branş"], "iban": ["iban"], "telefon": ["telefon"],
+    "kadro_unvani": ["unvan", "görevi", "branş", "kadro"], "iban": ["iban"], "telefon": ["telefon"],
+    "eposta": ["eposta", "e-posta", "email"], "hizmet_sinifi": ["hizmet sınıfı", "hizmet sinifi"],
+    "dose_gorevi": ["dose görevi", "döse görevi", "görev"],
 }
 OGRENCI_ICE_AKTARMA = {
     "okul_no": ["okul no", "okul numarası", "öğrenci no", "numara", "no"], "tckn": TCKN_BASLIKLARI,
     "ad_soyad": AD_BASLIKLARI + ["öğrenci adı"], "sinif": ["sınıf", "şube"],
     "iban": ["iban"], "_gorev": ["görevi", "unvan"],
+}
+CARI_ICE_AKTARMA = {
+    "kod": ["cari kod", "kod", "cari no"], "unvan": ["unvan", "adı soyadı", "ad soyad", "firma", "ünvan"] + AD_BASLIKLARI,
+    "tur": ["tür", "tur", "cari türü"], "vkn_tckn": ["vkn", "vergi no", "vergi kimlik"] + TCKN_BASLIKLARI,
+    "vergi_dairesi": ["vergi dairesi"], "telefon": ["telefon"], "eposta": ["eposta", "e-posta", "email"],
+    "adres": ["adres"], "iban": ["iban"],
+}
+MALZEME_ICE_AKTARMA = {
+    "kod": ["stok kod", "malzeme kod", "kod"], "ad": ["malzeme adı", "malzeme", "ad", "ürün adı"],
+    "tur": ["tür", "tur"], "birim": ["birim"], "kdv_orani": ["kdv", "kdv oranı"],
+    "kritik_stok": ["kritik stok", "min stok"],
+}
+URUN_ICE_AKTARMA = {
+    "kod": ["ürün kod", "urun kod", "kod"], "ad": ["ürün adı", "urun adi", "ad", "hizmet"],
+    "tur": ["tür", "tur"], "birim": ["birim"], "kdv_orani": ["kdv", "kdv oranı"],
+    "satis_fiyati": ["satış fiyatı", "fiyat", "birim fiyat"],
+}
+BOLUM_ICE_AKTARMA = {
+    "kod": ["bölüm kod", "kod"], "ad": ["bölüm", "atölye", "ad", "bölüm adı"],
+    "alan": ["alan", "dal"], "utp_yontemi": ["ütp", "utp", "dağıtım"],
+}
+
+TABLO_ICE_AKTARMA = {
+    "personel": PERSONEL_ICE_AKTARMA, "ogrenci": OGRENCI_ICE_AKTARMA, "cari": CARI_ICE_AKTARMA,
+    "malzeme": MALZEME_ICE_AKTARMA, "urun": URUN_ICE_AKTARMA, "bolum": BOLUM_ICE_AKTARMA,
+}
+
+SABLON_BASLIKLARI = {
+    "bolum": ["Kod", "Bölüm / atölye adı", "Alan / dal", "ÜTP dağıtım yöntemi"],
+    "personel": ["Sicil / kurum no", "T.C. kimlik no", "Adı soyadı", "Kadro unvanı / branş",
+                 "Hizmet sınıfı", "DÖSE görevi", "IBAN", "Telefon", "E-posta"],
+    "ogrenci": ["Okul no", "T.C. kimlik no", "Adı soyadı", "Sınıf / şube", "IBAN"],
+    "cari": ["Cari kodu", "Türü", "Unvan / adı soyadı", "VKN / T.C. kimlik no", "Vergi dairesi",
+             "Telefon", "E-posta", "Adres", "IBAN"],
+    "malzeme": ["Stok kodu", "Malzeme adı", "Türü", "Birim", "KDV oranı (%)", "Kritik stok miktarı"],
+    "urun": ["Kod", "Ürün / hizmet adı", "Türü", "Birim", "KDV oranı (%)", "Birim satış fiyatı (TL)"],
 }
 
 
@@ -143,3 +181,49 @@ def tablo_bul(yol: Path, alan_esleri: dict[str, list[str]], ad_alani: str | None
 
 def eslestir_ve_oku(yol: Path, alan_esleri: dict[str, list[str]]) -> list[dict]:
     return tablo_bul(yol, alan_esleri)[0]
+
+
+def tanim_oku(yol: Path, tablo: str) -> list[dict]:
+    """Tanım tablosu için başlık eşlemesiyle satırları okur."""
+    esler = TABLO_ICE_AKTARMA.get(tablo)
+    if not esler:
+        raise ValueError(f"Bu tablo için Excel içe aktarma yok: {tablo}")
+    return eslestir_ve_oku(Path(yol), esler)
+
+
+def sablon_yaz(tablo: str, yol: Path) -> Path:
+    """Boş Excel şablonu (tek başlık satırı)."""
+    basliklar = SABLON_BASLIKLARI.get(tablo)
+    if not basliklar:
+        raise ValueError(f"Bu tablo için şablon yok: {tablo}")
+    etiket = {"bolum": "Bölüm", "personel": "Personel", "ogrenci": "Öğrenci", "cari": "Cari",
+              "malzeme": "Malzeme", "urun": "Ürün"}[tablo]
+    return disa_aktar(Path(yol), [(etiket, basliklar, [])], baslik=f"DÖSE {etiket} içe aktarma şablonu")
+
+
+def satir_listesinden_oku(satirlar: list[list], alan_esleri: dict[str, list[str]],
+                          ad_alani: str | None = None) -> list[dict]:
+    """PDF vb. kaynaklardan gelen ham satır matrisini aynı başlık eşlemesiyle çözer."""
+    ad_alani = ad_alani or next((a for a in AD_ALANLARI if a in alan_esleri), "")
+    en_iyi = (0, None, None)
+    for i, satir in enumerate(satirlar[:200]):
+        eslesme = _baslik_eslesmesi(satir, alan_esleri)
+        if ad_alani in alan_esleri and ad_alani not in eslesme:
+            continue
+        if len(eslesme) > en_iyi[0]:
+            en_iyi = (len(eslesme), i, eslesme)
+    if not en_iyi[2]:
+        return []
+    _, bas, eslesme = en_iyi
+    kayitlar, bos = [], 0
+    for s in satirlar[bas + 1:]:
+        k = {alan: (s[j] if j < len(s) else None) for alan, j in eslesme.items()}
+        isim = k.get(ad_alani) if ad_alani in eslesme else next((v for v in k.values() if v not in (None, "")), None)
+        if isim in (None, "") or (isinstance(isim, str) and not str(isim).strip()):
+            bos += 1
+            if kayitlar and bos >= 2:
+                break
+            continue
+        bos = 0
+        kayitlar.append(k)
+    return kayitlar

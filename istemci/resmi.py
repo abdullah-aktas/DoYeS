@@ -126,13 +126,18 @@ class ResmiYaziEkrani(Ekran):
         await self.guvenli_islem(is_, dugme)
 
     def _ciz(self):
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         c: list[ft.Control] = [
-            ft.Row([ft.Text("Resmi yazılar", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.FilledButton("Yeni yazı", icon=ft.Icons.ADD, visible=self.yazabilir,
-                                    disabled=self.form is not None or self.islemde,
-                                    on_click=lambda _: self._ac()),
-                    ft.IconButton(ft.Icons.REFRESH, disabled=self.islemde,
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))], wrap=True),
+            sayfa_baslik_satiri("Resmi yazılar", [
+                ft.FilledButton("Yeni yazı", icon=ft.Icons.ADD, visible=self.yazabilir,
+                                disabled=self.form is not None or self.islemde,
+                                on_click=lambda _: self._ac()),
+                ft.IconButton(ft.Icons.REFRESH, disabled=self.islemde,
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.DESCRIPTION),
             ft.Text("Okul içi resmi yazı kaydı ve şablon metni (Bakanlık faaliyet/mizan, Sayıştay üst yazısı dahil). "
                     "Dış e-imza / EBYS / GİB entegrasyonu yoktur."),
         ]
@@ -238,13 +243,18 @@ class DenetimEkrani(Ekran):
         await self.guvenli_islem(is_, dugme)
 
     def _ciz(self):
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         c: list[ft.Control] = [
-            ft.Row([ft.Text("Denetim formu", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.FilledButton("Yeni form", icon=ft.Icons.ADD, visible=self.yazabilir,
-                                    disabled=self.form is not None or self.islemde,
-                                    on_click=lambda _: self._ac()),
-                    ft.IconButton(ft.Icons.REFRESH, disabled=self.islemde,
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))], wrap=True),
+            sayfa_baslik_satiri("Denetim formu", [
+                ft.FilledButton("Yeni form", icon=ft.Icons.ADD, visible=self.yazabilir,
+                                disabled=self.form is not None or self.islemde,
+                                on_click=lambda _: self._ac()),
+                ft.IconButton(ft.Icons.REFRESH, disabled=self.islemde,
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.FACT_CHECK),
             ft.Text("İç denetim / izleme kaydı. Resmî Sayıştay formu değildir; okul içi tutanak işlevi görür."),
         ]
         if self.form is not None:

@@ -12,12 +12,14 @@ try:
     from .ekranlar import Ekran, secim_kutusu, uyari_seridi
     from .finans import hesap_secenekleri, kayit_sonrasi_yenile, para
     from .supa import SupaHata
+    from .tema import sayfa_baslik_satiri
 except ImportError:
     import takvim
     import tanimlar as T
     from ekranlar import Ekran, secim_kutusu, uyari_seridi
     from finans import hesap_secenekleri, kayit_sonrasi_yenile, para
     from supa import SupaHata
+    from tema import sayfa_baslik_satiri
 
 
 class KasaFormu(TypedDict):
@@ -188,23 +190,24 @@ class KasaEkrani(Ekran):
     def _ciz(self):
         engelli = self.form is not None or self.islemde
         kontroller: list[ft.Control] = [
-            ft.Row([ft.Text("Kasa / Banka", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.FilledButton("Açılış bakiyesi", visible=self.yazabilir, disabled=engelli,
-                                    on_click=lambda _: self._yeni("Açılış")),
-                    ft.FilledButton("Fatura tahsilatı", visible=self.yazabilir, disabled=engelli,
-                                    on_click=lambda _: self._yeni("Tahsilat")),
-                    ft.FilledButton("Fatura ödemesi", visible=self.yazabilir, disabled=engelli,
-                                    on_click=lambda _: self._yeni("Ödeme")),
-                    ft.FilledButton("Avans", visible=self.yazabilir, disabled=engelli,
-                                    on_click=lambda _: self._yeni("Avans")),
-                    ft.FilledButton("Virman (Kasa↔Banka)", visible=self.yazabilir, disabled=engelli,
-                                    on_click=lambda _: self._yeni("Virman")),
-                    ft.FilledButton("Faturasız gelir", visible=self.yazabilir, disabled=engelli,
-                                    on_click=lambda _: self._yeni("Faturasız gelir")),
-                    ft.FilledButton("Faturasız gider", visible=self.yazabilir, disabled=engelli,
-                                    on_click=lambda _: self._yeni("Faturasız gider")),
-                    ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))], wrap=True),
+            sayfa_baslik_satiri("Kasa / Banka", [
+                ft.FilledButton("Açılış bakiyesi", visible=self.yazabilir, disabled=engelli,
+                                on_click=lambda _: self._yeni("Açılış")),
+                ft.FilledButton("Fatura tahsilatı", visible=self.yazabilir, disabled=engelli,
+                                on_click=lambda _: self._yeni("Tahsilat")),
+                ft.FilledButton("Fatura ödemesi", visible=self.yazabilir, disabled=engelli,
+                                on_click=lambda _: self._yeni("Ödeme")),
+                ft.FilledButton("Avans", visible=self.yazabilir, disabled=engelli,
+                                on_click=lambda _: self._yeni("Avans")),
+                ft.FilledButton("Virman (Kasa↔Banka)", visible=self.yazabilir, disabled=engelli,
+                                on_click=lambda _: self._yeni("Virman")),
+                ft.FilledButton("Faturasız gelir", visible=self.yazabilir, disabled=engelli,
+                                on_click=lambda _: self._yeni("Faturasız gelir")),
+                ft.FilledButton("Faturasız gider", visible=self.yazabilir, disabled=engelli,
+                                on_click=lambda _: self._yeni("Faturasız gider")),
+                ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.ACCOUNT_BALANCE_WALLET),
             ft.Text("Bu ekran bankaya gerçek para göndermez; gerçekleşmiş hareketi kaydeder. "
                     "Virman kasa ile banka arasında iç kayıt açar. Bakiye eksiye düşemez."),
             ft.Text("Tahsilatların hazine payına esas KDV hariç hasılatı Muhasebe > Hazine payı ekranında aylık "

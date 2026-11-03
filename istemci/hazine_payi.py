@@ -243,12 +243,17 @@ class HazinePayiEkrani(Ekran):
     def _ciz(self):
         bugun = takvim.bugun_istanbul()
         yillar = [(str(y), str(y)) for y in range(bugun.year, bugun.year - 6, -1)]
+        try:
+            from .tema import sayfa_baslik_satiri
+        except ImportError:
+            from tema import sayfa_baslik_satiri
         kontroller: list[ft.Control] = [
-            ft.Row([ft.Text("Hazine payı ve vergi takvimi", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                    secim_kutusu("Yıl", yillar, self.yil, bos=False, disabled=self.islemde,
-                                 on_select=self._yil_degisti),
-                    ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
-                                  on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))], wrap=True),
+            sayfa_baslik_satiri("Hazine payı ve vergi takvimi", [
+                secim_kutusu("Yıl", yillar, self.yil, bos=False, disabled=self.islemde,
+                             on_select=self._yil_degisti),
+                ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
+                              on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
+                              ft.Icons.PERCENT),
             ft.Text("Her ay, satış faturalarından fiilen tahsil edilen tutarın KDV hariç kısmı üzerinden %1 hazine payı "
                     "izleyen ayın 20'sine kadar Örnek No:30 ile bildirilir ve ödenir. Bildirimde 770/362, ödemede "
                     "362/102 yevmiyesi otomatik oluşur.", size=12),

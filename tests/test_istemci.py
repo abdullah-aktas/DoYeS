@@ -1492,6 +1492,71 @@ class YeniEkranModulleriTest(unittest.TestCase):
         self.assertTrue(hasattr(resmi, "DenetimEkrani"))
         self.assertTrue(hasattr(yil_sonu, "YilSonuEkrani"))
 
+    def test_tanim_ekrani_ice_aktarma_aksiyonlari(self):
+        import inspect
+        from istemci.ekranlar import TanimEkrani
+        kaynak = inspect.getsource(TanimEkrani)
+        self.assertIn("Şablon", kaynak)
+        self.assertIn("Excel/PDF yükle", kaynak)
+        self.assertIn("_ice_aktar_sec", kaynak)
+        self.assertIn("pick_files", kaynak)
+        self.assertIn("FilePicker", kaynak)
+        self.assertIn("TABLO_ICE_AKTARMA", kaynak)
+
+
+class ExcelIceAktarmaTest(unittest.TestCase):
+    def test_sablon_ve_cari_malzeme_esleme(self):
+        import tempfile
+        from dose import excel as X
+        with tempfile.TemporaryDirectory() as tmp:
+            yol = Path(tmp) / "cari.xlsx"
+            X.sablon_yaz("cari", yol)
+            from openpyxl import load_workbook
+            wb = load_workbook(yol)
+            ws = wb.active
+            # Şablon: satır 1 başlık metni, satır 3 sütun başlıkları
+            baslik_satiri = None
+            for i, row in enumerate(ws.iter_rows(values_only=True), 1):
+                if row and any(isinstance(c, str) and "kod" in str(c).casefold() for c in row):
+                    baslik_satiri = i
+                    break
+            self.assertIsNotNone(baslik_satiri)
+            ws.cell(baslik_satiri + 1, 1, "C0009")
+            ws.cell(baslik_satiri + 1, 2, "Tedarikçi")
+            ws.cell(baslik_satiri + 1, 3, "Örnek Ltd")
+            wb.save(yol)
+            kayitlar = X.tanim_oku(yol, "cari")
+            self.assertEqual(len(kayitlar), 1)
+            self.assertEqual(str(kayitlar[0].get("kod")), "C0009")
+            self.assertIn("Örnek", str(kayitlar[0].get("unvan")))
+
+            myol = Path(tmp) / "malzeme.xlsx"
+            X.disa_aktar(myol, [("Malzeme", ["Stok kodu", "Malzeme adı", "Türü", "Birim", "KDV oranı (%)"],
+                                [["M1", "Çelik sac", "İlk Madde ve Malzeme", "kg", 20]])])
+            mk = X.tanim_oku(myol, "malzeme")
+            self.assertEqual(mk[0]["kod"], "M1")
+            self.assertEqual(mk[0]["ad"], "Çelik sac")
+
+            byol = Path(tmp) / "bolum.xlsx"
+            X.sablon_yaz("bolum", byol)
+            self.assertTrue(byol.is_file())
+            uyol = Path(tmp) / "urun.xlsx"
+            X.disa_aktar(uyol, [("Ürün", ["Kod", "Ürün / hizmet adı", "Türü", "Birim"],
+                                [["U1", "Kapı", "Mal", "adet"]])])
+            uk = X.tanim_oku(uyol, "urun")
+            self.assertEqual(uk[0]["kod"], "U1")
+
+    def test_pdf_satir_listesi_esleme(self):
+        from dose import excel as X
+        satirlar = [
+            ["Cari kodu", "Unvan / adı soyadı", "Türü"],
+            ["C1", "ABC A.Ş.", "Müşteri"],
+            ["C2", "XYZ Ltd", "Tedarikçi"],
+        ]
+        kayitlar = X.satir_listesinden_oku(satirlar, X.CARI_ICE_AKTARMA)
+        self.assertEqual(len(kayitlar), 2)
+        self.assertEqual(kayitlar[0]["kod"], "C1")
+
 
 def ft_secim(deger):
     import flet as ft

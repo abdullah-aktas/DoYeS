@@ -1,7 +1,9 @@
 # DÖSE Yönetim Sistemi – Satıcı Rehberi
 
-Bu rehber okulları açan, lisanslarını yöneten ve Supabase projesini işleten **satıcı** içindir. Okulların
-kullanacağı kılavuz [KURULUM.md](KURULUM.md); teknik ayrıntı [TEKNIK_SERVIS_KILAVUZU.md](TEKNIK_SERVIS_KILAVUZU.md).
+Bu rehber okulları açan, lisanslarını yöneten ve Supabase projesini işleten **satıcı** içindir.
+**Adım adım satışa hazırlık ve kuruma teslim:** [SATIS_VE_TESLIM.md](SATIS_VE_TESLIM.md).
+Okul kullanıcı kılavuzları [KULLANIM.md](KULLANIM.md); kurulum [KURULUM.md](KURULUM.md); teknik
+[TEKNIK_SERVIS_KILAVUZU.md](TEKNIK_SERVIS_KILAVUZU.md); kod [GELISTIRICI.md](GELISTIRICI.md).
 
 **Satıcı:** Programı **Derik MTAL Döner Sermaye İşletmesi** geliştirir, satar, işletir ve destekler.
 

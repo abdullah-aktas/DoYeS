@@ -3,6 +3,9 @@
 Okulda kurulacak sunucu, veritabanı veya açık bırakılacak bilgisayar yoktur. Kayıtlar Supabase'te durur. Okulun
 bilgisayarı kapalı olsa ya da bozulsa da iş yürür ve veri kaybolmaz.
 
+Rol ve platform (masaüstü / web / mobil) kullanım adımları: **[KULLANIM.md](KULLANIM.md)**.
+Satıcının kuruma paket verme sırası: **[SATIS_VE_TESLIM.md](SATIS_VE_TESLIM.md)**.
+
 ## 0. Satıcı / teknik: Supabase projesini ilk kez kurmak
 
 Bu bölüm **okul müdürüne değil**, uygulamayı hazırlayan kişiye yöneliktir. Bir kez yapılır.
@@ -43,7 +46,7 @@ Yerel şema testi (geliştirici): `cd supabase && npm test`.
 
 | Cihaz | Nasıl |
 |---|---|
-| Windows | Satıcının verdiği masaüstü paketini çalıştırın veya geliştiricide depo kökünden `python main.py`. |
+| Windows | Satıcının verdiği masaüstü paketini çalıştırın veya geliştiricide `python main.py` / `flet run -a istemci/assets`. |
 | Android | Satıcının verdiği APK’yı kurun (veya Play Store). |
 | Tarayıcı | Satıcının verdiği web adresini açın. |
 
