@@ -37,6 +37,9 @@ echo Kaynak kopyalaniyor -^> %BUILD_SRC%
 mkdir "%BUILD_SRC%" 2>nul
 robocopy "%cd%" "%BUILD_SRC%" /E /XD __pycache__ build .dart_tool store /XF DOSE_Mobil.apk *.aab /NFL /NDL /NJH /NJS /nc /ns /np
 if errorlevel 8 goto hata
+rem Ust klasordeki dose cekirdegi paket icinde olmali (from dose import ...)
+robocopy "%cd%\..\dose" "%BUILD_SRC%\dose" /E /XD __pycache__ /NFL /NDL /NJH /NJS /nc /ns /np
+if errorlevel 8 goto hata
 
 rem Mutlak keystore yolu (Gradle goreli yolu yanlis cozer)
 set "FLET_ANDROID_SIGNING_KEY_STORE=%BUILD_SRC%\android\upload-keystore.p12"

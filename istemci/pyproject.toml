@@ -1,10 +1,16 @@
 [project]
 name = "dose-mobil"
-version = "1.7.4"
+version = "1.7.5"
 description = "DÖSE Yönetim: okulun döner sermaye işletmesi; masaüstü, telefon ve tarayıcıda Supabase üzerinde tek kayıt"
 authors = [{ name = "Derik MTAL Döner Sermaye İşletmesi" }]
 requires-python = ">=3.10"
-dependencies = ["flet==1.0.5", "certifi"]
+dependencies = [
+    "flet==1.0.5",
+    "certifi",
+    "openpyxl>=3.1",
+    "reportlab>=4.0",
+    "pdfplumber>=0.11",
+]
 
 [tool.flet]
 org = "tr.k12.meb.derikmtal"

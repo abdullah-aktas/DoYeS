@@ -584,8 +584,20 @@ async function faturaOrtami() {
   ortam.veri.tarih = tarih;
   const args = p => [p.tur, p.no, p.tarih, p.cari, p.siparis, p.kalemler, p.tevkifat, p.stopaj, p.surumler];
   const onizle = (u, p) => rpc(u, 'public.dose_fatura_onizle($1,$2,$3,$4,$5,$6,$7,$8,$9)', args(p));
-  const kaydetFatura = (u, p, imza, istek) =>
-    rpc(u, 'public.dose_fatura_kaydet($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)', [...args(p), imza, istek]);
+  const varsayilanAlim = {
+    temin_usulu: 'Doğrudan Temin',
+    gider_turu: 'Hizmet Alımı',
+    belge_turu: 'e-Fatura',
+    belgeler: {
+      ihtiyac: true, yaklasik_maliyet: true, piyasa: true, onay: true, muayene: true, odeme: false,
+    },
+  };
+  const kaydetFatura = async (u, p, imza, istek) => {
+    if (p.tur === 'Alış') {
+      await rpc(u, 'public.dose_alim_hazirla($1,$2,$3)', [istek, p.alim || varsayilanAlim, null]);
+    }
+    return rpc(u, 'public.dose_fatura_kaydet($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)', [...args(p), imza, istek]);
+  };
   const tersleFatura = (id, istek, u = SAY) =>
     rpc(u, 'public.dose_fatura_tersle($1,$2,$3)', [id, 'Yanlış kayıt', istek]);
   return { ...ortam, tarih, onizle, kaydetFatura, tersleFatura };

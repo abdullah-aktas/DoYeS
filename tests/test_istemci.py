@@ -420,9 +420,10 @@ class ArayuzTest(unittest.TestCase):
             self.assertEqual(app.genis, genislik >= 900)
             self.assertIsNone(sayfa.appbar)
             self.assertIsNone(sayfa.drawer)
-            cubuk = app.menu_kutu.content.controls[0]
-            menudekiler = [o.content.value for o in cubuk.controls if not hasattr(o, "controls") or not o.controls]
-            for grup in cubuk.controls:
+            # menu_kutu → Container(Row([MenuBar(controls=…)]))
+            menubar = app.menu_kutu.content.content.controls[0]
+            menudekiler = [o.content.value for o in menubar.controls if not getattr(o, "controls", None)]
+            for grup in menubar.controls:
                 menudekiler += [o.content.value for o in getattr(grup, "controls", None) or []]
             self.assertEqual(sorted(menudekiler), sorted(e for _, e, *_ in app.gorunur_sayfalar()))
             self.assertEqual(len(app.gorunur_sayfalar()), 14)
@@ -982,7 +983,9 @@ class ArayuzTest(unittest.TestCase):
         self.assertFalse(ekran.yazabilir)
         self.assertIs(ekran.kontrol.content, ekran.form_kutusu)
         self.assertTrue(ekran.form.kontroller["unvan"].read_only)
-        dugmeler = ekran.form_kutusu.controls[-1].controls
+        # Son kontrol yuzey_kart: Container(Column([form, Row([kaydet, sil])]))
+        kart = ekran.form_kutusu.controls[-1]
+        dugmeler = kart.content.controls[-1].controls
         self.assertFalse(any(d.visible for d in dugmeler))
 
     def test_uye_olmayan_etkinlestirme_ekrani(self):
