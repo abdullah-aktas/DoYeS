@@ -19,8 +19,16 @@ for /f "usebackq eol=# tokens=1,* delims==" %%A in ("android\signing.env") do (
 
 if "%ANDROID_HOME%"=="" set "ANDROID_HOME=C:\AndroidSdk"
 if "%FLUTTER_ROOT%"=="" set "FLUTTER_ROOT=C:\flutter\3.41.4"
+if not exist "%FLUTTER_ROOT%\bin\flutter.bat" if exist "C:\dev\flutter\bin\flutter.bat" set "FLUTTER_ROOT=C:\dev\flutter"
 if "%PUB_CACHE%"=="" set "PUB_CACHE=C:\pub-cache"
 if "%JAVA_HOME%"=="" set "JAVA_HOME=C:\Users\Muhasebe Ogretmenim\java\17.0.13+11"
+rem Kullanici yolundaki bosluk native asset / NDK kirar
+if "%HOME%"=="" set "HOME=C:\dose_home"
+if "%APPDATA%"=="" set "APPDATA=C:\dose_home\AppData\Roaming"
+if "%LOCALAPPDATA%"=="" set "LOCALAPPDATA=C:\dose_home\AppData\Local"
+if not exist "%PUB_CACHE%" mkdir "%PUB_CACHE%"
+if not exist "%APPDATA%" mkdir "%APPDATA%"
+if not exist "%LOCALAPPDATA%" mkdir "%LOCALAPPDATA%"
 
 set "PATH=%FLUTTER_ROOT%\bin;C:\Program Files\Git\cmd;%JAVA_HOME%\bin;%ANDROID_HOME%\platform-tools;%PATH%"
 set "PYTHONUTF8=1"
@@ -28,9 +36,11 @@ set "PYTHONIOENCODING=utf-8"
 set "FLET_CLI_NO_RICH_OUTPUT=1"
 set "GRADLE_OPTS=-Dorg.gradle.daemon=false"
 
-set "BUILD_SRC=%TEMP%\dose_mobil_%RANDOM%_%RANDOM%_%RANDOM%"
+rem TEMP yerine bosluksuz sabit sahne
+set "BUILD_SRC=C:\dose_apk_stage"
+if exist "%BUILD_SRC%" rmdir /s /q "%BUILD_SRC%"
 if exist "%BUILD_SRC%" (
-    echo Gecici derleme klasoru zaten var; yeniden deneyin.
+    echo Gecici derleme klasoru silinemedi: %BUILD_SRC%
     exit /b 1
 )
 echo Kaynak kopyalaniyor -^> %BUILD_SRC%
@@ -40,6 +50,10 @@ if errorlevel 8 goto hata
 rem Ust klasordeki dose cekirdegi paket icinde olmali (from dose import ...)
 robocopy "%cd%\..\dose" "%BUILD_SRC%\dose" /E /XD __pycache__ /NFL /NDL /NJH /NJS /nc /ns /np
 if errorlevel 8 goto hata
+
+rem Android/Pyodide icin yalniz binary tekerlekli paketler (openpyxl/pdfplumber/reportlab yok)
+python -c "from pathlib import Path; p=Path(r'%BUILD_SRC%\pyproject.toml'); t=p.read_text(encoding='utf-8'); import re; t=re.sub(r'dependencies = \[[^\]]*\]', 'dependencies = [\"flet==1.0.5\", \"certifi\"]', t, count=1, flags=re.S); p.write_text(t, encoding='utf-8')"
+if errorlevel 1 goto hata
 
 rem Mutlak keystore yolu (Gradle goreli yolu yanlis cozer)
 set "FLET_ANDROID_SIGNING_KEY_STORE=%BUILD_SRC%\android\upload-keystore.p12"

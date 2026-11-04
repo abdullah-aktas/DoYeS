@@ -3,15 +3,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
 
-_INCE = Side(style="thin", color="B7C3D0")
+def _ox():
+    try:
+        from openpyxl import Workbook, load_workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError as e:
+        raise ImportError("Excel için openpyxl gerekir (pip install openpyxl).") from e
+    return Workbook, load_workbook, Alignment, Border, Font, PatternFill, Side, get_column_letter
 
 
 def disa_aktar(yol: Path, sayfalar: list[tuple[str, list, list]], baslik: str | None = None) -> Path:
     """sayfalar: [(sayfa_adı, başlıklar, satırlar)]"""
+    Workbook, _, Alignment, Border, Font, PatternFill, Side, get_column_letter = _ox()
+    _INCE = Side(style="thin", color="B7C3D0")
     wb = Workbook()
     wb.remove(wb.active)
     for ad, basliklar, satirlar in sayfalar:
@@ -49,6 +55,7 @@ def _sayfa_adi(ad: str) -> str:
 
 def oku(yol: Path) -> dict[str, list[list]]:
     """Tüm sayfaları hücre değerleri (hesaplanmış) olarak döndürür."""
+    _, load_workbook, *_ = _ox()
     wb = load_workbook(str(yol), data_only=True, read_only=True)
     sonuc = {}
     for ws in wb.worksheets:
