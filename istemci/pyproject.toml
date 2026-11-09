@@ -1,6 +1,6 @@
 [project]
 name = "dose-mobil"
-version = "1.7.5"
+version = "1.7.6"
 description = "DÖSE Yönetim: okulun döner sermaye işletmesi; masaüstü, telefon ve tarayıcıda Supabase üzerinde tek kayıt"
 authors = [{ name = "Derik MTAL Döner Sermaye İşletmesi" }]
 requires-python = ">=3.10"
@@ -19,6 +19,8 @@ company = "Derik MTAL Döner Sermaye İşletmesi"
 copyright = "Copyright (C) 2026 Derik MTAL Döner Sermaye İşletmesi"
 # Android applicationId / iOS bundle id: tr.k12.meb.derikmtal.dosemobil
 bundle_id = "tr.k12.meb.derikmtal.dosemobil"
+# Flet launcher ikonları assets/icon.png (+ icon_<platform>.png) dosyasından üretilir
+icon_background = "#1f4e79"
 
 [tool.flet.app]
 path = "."
@@ -27,7 +29,8 @@ exclude = ["android"]
 [tool.flet.android]
 split_per_abi = false
 adaptive_icon_background = "#1f4e79"
-icon = "assets/ikon.png"
+icon_background = "#1f4e79"
+icon = "assets/icon.png"
 legacy_packaging = true
 
 [tool.flet.android.permission]
@@ -42,6 +45,15 @@ key_alias = "doseupload"
 
 # App Store / TestFlight — IPA derlemesi yalnız macOS + Xcode + Apple Developer hesabı ile yapılır.
 [tool.flet.ios]
-icon = "assets/ikon.png"
+icon = "assets/icon.png"
+icon_background = "#1f4e79"
 # team_id / provisioning_profile / signing_certificate: Mac'te Apple hesabınızla doldurun.
 # export_method = "app-store"
+
+[tool.flet.web]
+pwa_background_color = "#1f4e79"
+pwa_theme_color = "#1f4e79"
+pwa_short_name = "DÖSE"
+
+[tool.flet.windows]
+icon_background = "#1f4e79"

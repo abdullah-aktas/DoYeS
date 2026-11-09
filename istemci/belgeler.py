@@ -79,7 +79,9 @@ tr.t td { font-weight: bold; background: #f5f5f5; }
 @lru_cache(maxsize=1)
 def marka_img_html(boyut: int = 28) -> str:
     """Embedded app icon for printable HTML footers (works offline)."""
-    yol = Path(__file__).resolve().parent / "assets" / "ikon.png"
+    yol = Path(__file__).resolve().parent / "assets" / "icon.png"
+    if not yol.is_file():
+        yol = Path(__file__).resolve().parent / "assets" / "ikon.png"
     if not yol.is_file():
         return ""
     veri = base64.b64encode(yol.read_bytes()).decode("ascii")

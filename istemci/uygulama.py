@@ -72,7 +72,7 @@ def logo(genislik: int = 132, yukseklik: int = 72) -> ft.Control:
 
 
 def uygulama_ikonu(boyut: int = 40) -> ft.Control:
-    return ft.Image(src="ikon.png", width=boyut, height=boyut, fit=ft.BoxFit.CONTAIN,
+    return ft.Image(src="icon.png", width=boyut, height=boyut, fit=ft.BoxFit.CONTAIN,
                     border_radius=8,
                     error_content=ft.Icon(ft.Icons.ACCOUNT_BALANCE, size=boyut, color=ANA_RENK))
 
