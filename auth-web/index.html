@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DÖSE Yönetim — Hesap</title>
   <style>
-    :root { --ana: #1f4e79; --zemin: #f0f4f8; --kenar: #d7e0ea; --metin: #1a2332; }
+    :root { --ana: #1f4e79; --kenar: #d7e0ea; --metin: #1a2332; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: linear-gradient(145deg, #0d2c4a, var(--ana), #2f6aa3); min-height: 100vh; color: var(--metin); }
     main { max-width: 420px; margin: 0 auto; padding: 48px 16px; }
@@ -18,7 +18,7 @@
     button:disabled { opacity: .6; cursor: default; }
     .ok { color: #0d6a3f; background: #e8f6ee; padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
     .hata { color: #8a1f1f; background: #fdecec; padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
-    .gizli { display: none; }
+    .gizli { display: none !important; }
   </style>
 </head>
 <body>
@@ -42,87 +42,135 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    const URL = "https://bzirnfsgdswcwwutmwdi.supabase.co";
-    const ANON = "sb_publishable_CSADmKJ3hXm-9jCT7BIfZg_pecVOO5Y";
-    const sb = supabase.createClient(URL, ANON);
-    const aciklama = document.getElementById("aciklama");
-    const form = document.getElementById("form");
-    const onay = document.getElementById("onay");
-    const mesaj = document.getElementById("mesaj");
+    (function () {
+      var SUPABASE_URL = "https://bzirnfsgdswcwwutmwdi.supabase.co";
+      var ANON = "sb_publishable_CSADmKJ3hXm-9jCT7BIfZg_pecVOO5Y";
+      var aciklama = document.getElementById("aciklama");
+      var form = document.getElementById("form");
+      var onay = document.getElementById("onay");
+      var mesaj = document.getElementById("mesaj");
 
-    function params() {
-      const h = new URLSearchParams(location.hash.replace(/^#/, ""));
-      const q = new URLSearchParams(location.search);
-      const get = (k) => h.get(k) || q.get(k);
-      return {
-        access_token: get("access_token"),
-        refresh_token: get("refresh_token"),
-        type: get("type"),
-        error: get("error_description") || get("error"),
-      };
-    }
+      function hataYaz(t) {
+        mesaj.innerHTML = '<div class="hata"></div>';
+        mesaj.firstChild.textContent = t;
+      }
+      function okYaz(t) {
+        mesaj.innerHTML = '<div class="ok"></div>';
+        mesaj.firstChild.textContent = t;
+      }
 
-    async function baslat() {
-      const p = params();
-      if (p.error) {
-        aciklama.textContent = "Bağlantı geçersiz veya süresi dolmuş.";
-        mesaj.innerHTML = `<div class="hata">${p.error}</div>`;
+      if (!window.supabase || !supabase.createClient) {
+        aciklama.textContent = "Sayfa yüklenemedi";
+        hataYaz("Supabase kütüphanesi açılmadı. İnternet bağlantınızı kontrol edip sayfayı yenileyin.");
         return;
       }
-      if (!p.access_token || !p.refresh_token) {
-        aciklama.textContent = "Bu sayfa e-posta doğrulama ve şifre sıfırlama içindir.";
-        mesaj.innerHTML = `<p>Masaüstü: <b>dose-mobil.exe</b> · Mobil: <b>DOSE_Mobil</b> APK ile giriş yapın.</p>`;
-        return;
+
+      var sb = supabase.createClient(SUPABASE_URL, ANON);
+
+      function params() {
+        var h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+        var q = new URLSearchParams(location.search || "");
+        function get(k) { return h.get(k) || q.get(k); }
+        return {
+          access_token: get("access_token"),
+          refresh_token: get("refresh_token"),
+          type: get("type"),
+          code: get("code"),
+          error: get("error_description") || get("error")
+        };
       }
-      const { error } = await sb.auth.setSession({
-        access_token: p.access_token,
-        refresh_token: p.refresh_token,
-      });
-      if (error) {
-        aciklama.textContent = "Oturum açılamadı.";
-        mesaj.innerHTML = `<div class="hata">${error.message}</div>`;
-        return;
-      }
-      if (p.type === "recovery") {
+
+      function sifreFormunuAc() {
         aciklama.textContent = "Şifre sıfırlama";
         form.classList.remove("gizli");
-        return;
       }
-      // signup / invite / magiclink / email change
-      aciklama.textContent = "Hesap doğrulama";
-      onay.classList.remove("gizli");
-      history.replaceState(null, "", location.pathname);
-    }
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const s1 = document.getElementById("s1").value;
-      const s2 = document.getElementById("s2").value;
-      const dugme = document.getElementById("kaydet");
-      mesaj.innerHTML = "";
-      if (s1.length < 8) {
-        mesaj.innerHTML = `<div class="hata">Şifre en az 8 karakter olmalı.</div>`;
-        return;
+      function dogrulamaGoster() {
+        aciklama.textContent = "Hesap doğrulama";
+        onay.classList.remove("gizli");
+        try { history.replaceState(null, "", location.pathname); } catch (e) {}
       }
-      if (s1 !== s2) {
-        mesaj.innerHTML = `<div class="hata">Şifreler eşleşmiyor.</div>`;
-        return;
-      }
-      dugme.disabled = true;
-      const { error } = await sb.auth.updateUser({ password: s1 });
-      dugme.disabled = false;
-      if (error) {
-        mesaj.innerHTML = `<div class="hata">${error.message}</div>`;
-        return;
-      }
-      form.classList.add("gizli");
-      aciklama.textContent = "Şifre güncellendi";
-      mesaj.innerHTML = `<div class="ok">Tamam. Masaüstü veya mobil uygulamayı açıp yeni şifrenizle giriş yapın.</div>`;
-      history.replaceState(null, "", location.pathname);
-      await sb.auth.signOut();
-    });
 
-    baslat();
+      async function baslat() {
+        try {
+          var p = params();
+          if (p.error) {
+            aciklama.textContent = "Bağlantı geçersiz veya süresi dolmuş.";
+            hataYaz(p.error);
+            return;
+          }
+
+          // PKCE: ?code=...
+          if (p.code && !p.access_token) {
+            var ex = await sb.auth.exchangeCodeForSession(p.code);
+            if (ex.error) {
+              aciklama.textContent = "Oturum açılamadı.";
+              hataYaz(ex.error.message);
+              return;
+            }
+            // recovery genelde hash type ile gelir; code akışında formu aç
+            sifreFormunuAc();
+            return;
+          }
+
+          if (!p.access_token || !p.refresh_token) {
+            aciklama.textContent = "Bu sayfa e-posta doğrulama ve şifre sıfırlama içindir.";
+            mesaj.innerHTML = "<p>Masaüstü: <b>dose-mobil.exe</b> · Mobil: <b>DOSE_Mobil</b> APK ile giriş yapın.</p>" +
+              "<p>Şifre alanını görmüyorsanız e-postadaki <b>yeni</b> sıfırlama bağlantısını kullanın; linki kopyalayıp tarayıcı adres çubuğuna yapıştırın.</p>";
+            return;
+          }
+
+          var ss = await sb.auth.setSession({
+            access_token: p.access_token,
+            refresh_token: p.refresh_token
+          });
+          if (ss.error) {
+            aciklama.textContent = "Oturum açılamadı.";
+            hataYaz(ss.error.message + " — Yeni bir «Şifremi unuttum» e-postası isteyin.");
+            return;
+          }
+
+          // recovery veya type yoksa (bazı istemciler type'ı düşürür) şifre formu
+          if (p.type === "recovery" || !p.type || p.type === "invite") {
+            sifreFormunuAc();
+            return;
+          }
+          dogrulamaGoster();
+        } catch (err) {
+          aciklama.textContent = "Hata";
+          hataYaz(String(err && err.message ? err.message : err));
+        }
+      }
+
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        var s1 = document.getElementById("s1").value;
+        var s2 = document.getElementById("s2").value;
+        var dugme = document.getElementById("kaydet");
+        mesaj.innerHTML = "";
+        if (s1.length < 8) { hataYaz("Şifre en az 8 karakter olmalı."); return; }
+        if (s1 !== s2) { hataYaz("Şifreler eşleşmiyor."); return; }
+        dugme.disabled = true;
+        try {
+          var up = await sb.auth.updateUser({ password: s1 });
+          if (up.error) {
+            hataYaz(up.error.message);
+            dugme.disabled = false;
+            return;
+          }
+          form.classList.add("gizli");
+          aciklama.textContent = "Şifre güncellendi";
+          okYaz("Tamam. Masaüstü veya mobil uygulamayı açıp yeni şifrenizle giriş yapın.");
+          try { history.replaceState(null, "", location.pathname); } catch (e2) {}
+          await sb.auth.signOut();
+        } catch (err) {
+          hataYaz(String(err && err.message ? err.message : err));
+          dugme.disabled = false;
+        }
+      });
+
+      baslat();
+    })();
   </script>
 </body>
 </html>
