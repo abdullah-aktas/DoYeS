@@ -1,15 +1,16 @@
 # Sistem Yöneticisi kılavuzu
 
-Okul içi **tanım ve kullanıcı** yönetimine odaklanır. Harcama olur zincirinin müdür rolünden farklıdır;
-okulda aktif müdür veya sistem yöneticisinden en az biri kalmalıdır.
+Okul içi **tam yönetici** rolüdür; Okul Müdürü ile aynı yazma yetkisine sahiptir. Harcama olur zincirinde
+müdürün yerini almaz (olur müdürdedir) ama tüm ekranları kullanabilir ve kullanıcılara yetki verebilir.
+Okulda aktif müdür veya sistem yöneticisinden en az biri kalmalıdır.
 
 Platform: [PLATFORM.md](PLATFORM.md) · Ortak: [ORTAK.md](ORTAK.md)
 
 ## Yetkiler
 
-- **Kullanıcılar:** davet, rol/bölüm güncelleme, pasifleştirme (müdürle aynı yönetim RPC’leri)
-- Tanım ekranlarında geniş yazma yetkisi (kurum, bölüm, personel…)
-- İşlem kaydını izleme
+- **Kullanıcılar:** davet, rol/bölüm, sayfa yetkisi (yazma / okuma / kapalı), pasifleştirme
+- Tüm okul sayfalarında yazma yetkisi (müdürle aynı matris)
+- İşlem kaydını izleme · Ana ekran özet grafikleri
 
 ## Merkez yöneticisi ile karıştırmayın
 

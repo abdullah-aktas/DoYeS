@@ -1,6 +1,7 @@
 # Okul Müdürü kılavuzu
 
-**Yasal görev:** Harcama yetkilisi. Sipariş / parça başı / fazla çalışma **olur**unu verir; kullanıcıları yönetir;
+**Yasal görev:** Harcama yetkilisi ve okul yöneticisi. Tüm ekranlarda yazma yetkisi vardır. Sipariş / parça başı /
+fazla çalışma **olur**unu verir; kullanıcıları yönetir ve onlara sayfa yetkisi (yazma / okuma / kapalı) atar;
 yıl sonu son onayını verir.
 
 Platform farkları: [PLATFORM.md](PLATFORM.md) · Ortak adımlar: [ORTAK.md](ORTAK.md)
@@ -17,7 +18,8 @@ Platform farkları: [PLATFORM.md](PLATFORM.md) · Ortak adımlar: [ORTAK.md](ORT
 | İş | Nerede | Ne yaparsınız |
 |---|---|---|
 | Bekleyen onaylar | Ana ekran | Sipariş, parça başı, fazla çalışma — **Olur** veya **İade** |
-| Kullanıcı | Kullanıcılar | Davet, rol/bölüm değişikliği, pasifleştirme |
+| Kullanıcı | Kullanıcılar | Davet, rol/bölüm, sayfa yetkisi, pasifleştirme |
+| Özet | Ana ekran | KPI kartları, sipariş/fatura grafikleri, onay kuyruğu |
 | Yasal süreler | Ana ekran | Bakanlık mizan, hazine, beyan tarihlerini takip |
 | Resmi yazı | Resmi yazılar | Üst yazı şablonu (yetkiye göre) |
 | Yıl sonu | Yıl sonu / ÜTP | Sayman hazırlar; siz son **Olur** |

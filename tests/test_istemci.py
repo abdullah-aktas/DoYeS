@@ -392,6 +392,10 @@ class ArayuzTest(unittest.TestCase):
         yollar[("POST", "/rest/v1/rpc/dose_siparis_veri")] = (200, {"cariler": [], "bolumler": [], "urunler": []})
         yollar[("POST", "/rest/v1/rpc/dose_siparisler")] = (200, [])
         yollar[("POST", "/rest/v1/rpc/dose_gorevlerim")] = (200, {"gorevler": []})
+        yollar[("POST", "/rest/v1/rpc/dose_ana_ozet")] = (200, {
+            "yil": 2026, "finans_gorunur": True, "siparis_gorunur": True, "siparis": 0,
+            "siparis_durum": {}, "fatura_satis": "0", "fatura_alis": "0", "kasa_bakiye": "0",
+            "banka_bakiye": "0", "hp_hasilat": "0"})
         yollar[("POST", "/rest/v1/rpc/dose_maliyet_veri")] = (200, {"urunler": [], "kalemler": [], "toplam": None,
                                                                      "yazabilir": False})
         yollar[("POST", "/rest/v1/rpc/dose_rapor_ozet")] = (200, {"yil": 2026, "siparis": 0, "fatura_satis": "0",

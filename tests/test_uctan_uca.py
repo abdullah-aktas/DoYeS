@@ -160,7 +160,8 @@ class UctanUcaTest(unittest.TestCase):
             self.assertEqual(mudur.ben["rol"], "Okul Müdürü")
             self.assertEqual(mudur.ben["okul"]["kurum_kodu"], "123456")
             ana = metinler(sayfa)
-            self.assertIn("Merhaba Ayşe Yılmaz", ana)
+            self.assertIn("Merhaba Ayşe", ana)
+            self.assertIn("Bekleyen görev", ana)
             self.assertIn("Yaklaşan yasal süreler", ana)
 
             # 2) Every page the role can see opens against the real schema without an error.

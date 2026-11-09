@@ -15,25 +15,34 @@ try:
     from . import takvim, tema
     from . import tanimlar as T
     from .supa import SupaHata
-    from .tema import ANA_RENK, METIN_IKINCIL, bilgi_karti, liste_satiri, sayfa_baslik_satiri, yuzey_kart
+    from .tema import (ANA_RENK, MARKA_VURGU, METIN_IKINCIL, bilgi_karti, kahraman_seridi, kpi_karti,
+                       liste_satiri, oran_cubugu, sayfa_baslik_satiri, yuzey_kart)
 except ImportError:
     import takvim
     import tema
     import tanimlar as T
     from supa import SupaHata
-    from tema import ANA_RENK, METIN_IKINCIL, bilgi_karti, liste_satiri, sayfa_baslik_satiri, yuzey_kart
+    from tema import (ANA_RENK, MARKA_VURGU, METIN_IKINCIL, bilgi_karti, kahraman_seridi, kpi_karti,
+                      liste_satiri, oran_cubugu, sayfa_baslik_satiri, yuzey_kart)
 
 KLAVYE = {"para": ft.KeyboardType.NUMBER, "ondalik": ft.KeyboardType.NUMBER, "oran": ft.KeyboardType.NUMBER,
           "tarih": ft.KeyboardType.DATETIME}
 ROL_GOREVI = {
-    "Okul Müdürü": "Harcama yetkilisi: sipariş, parça başı ve fazla çalışma olurunu verir; kullanıcıları yönetirsiniz.",
+    "Okul Müdürü": "Harcama yetkilisi ve okul yöneticisi: tüm işlemlere yazma yetkiniz vardır; "
+                   "kullanıcılara rol ve sayfa yetkisi verirsiniz.",
     "Teknik Müdür Yardımcısı": "Gerçekleştirme görevlisi: işi ve puantajı kontrol edip imzalarsınız; taslak da hazırlayabilirsiniz.",
     "Sayman": "Fatura, kasa, hazine payı, ÜTP ödemesi ve merkez parametre doğrulamasını yaparsınız.",
     "Alan Şefi": "Atölyenizin siparişini yürütür, puantajı imzalar ve onayın ilk aşamasını verirsiniz.",
     "Öğretmen": "Kendi atölyenizde parça başı ve fazla çalışma puantajını yazarsınız; sipariş taslağı açabilirsiniz.",
     "Memur / Veri Girişi": "Cari, stok kartı, öğrenci gibi tanımları ve resmi yazı taslaklarını girersiniz.",
     "İzleyici / Denetçi": "Kayıtları ve işlem izini değiştirmeden incelersiniz; iç denetim formu doldurabilirsiniz.",
-    "Sistem Yöneticisi": "Okulun tanımlarını ve kullanıcılarını yönetirsiniz (onay ve tahsilat sizde değildir).",
+    "Sistem Yöneticisi": "Okulun tüm ekranlarında yazma yetkisi; kullanıcıları davet eder, rol ve sayfa yetkisi atarsınız.",
+}
+
+YETKI_SECENEKLERI = [("varsayilan", "Rol varsayılanı"), ("y", "Yazma"), ("g", "Okuma"), ("-", "Kapalı")]
+DURUM_RENKLERI = {
+    "Taslak": "#8ec5d6", "Onay Bekliyor": "#d48f2a", "Sözleşme İmzalandı": "#2f9e6b",
+    "İade Edildi": "#b3261e", "İptal": "#5c6b7a",
 }
 SURE_GOREN = {"Okul Müdürü", "Sayman", "Teknik Müdür Yardımcısı", "Sistem Yöneticisi", "İzleyici / Denetçi"}
 
@@ -148,36 +157,121 @@ class SiparisKalemKontrolleri(TypedDict):
 
 # ---------------------------------------------------------------------- home
 class AnaEkran(Ekran):
+    def __init__(self, app):
+        super().__init__(app)
+        self.ozet: dict = {}
+        self.gorevler: list = []
+
+    @staticmethod
+    def _para(deger) -> str:
+        if deger is None or deger == "":
+            return "—"
+        try:
+            from decimal import Decimal
+            return f"{T.sayi_yaz(Decimal(str(deger)), 2)} ₺"
+        except Exception:
+            return str(deger)
+
     async def yukle(self):
         ben = self.app.ben
         okul = ben.get("okul") or {}
-        c: list[ft.Control] = [
-            sayfa_baslik_satiri(f"Merhaba {ben.get('ad_soyad') or ''}", ikon=ft.Icons.HOME_OUTLINED),
-            ft.Text(f"{okul.get('ad', '')} · {ben.get('rol')}", size=15, color=METIN_IKINCIL)]
         if ben.get("merkez_mevzuat") and not okul:
-            c.append(bilgi_karti("Merkez", "Parametre yayınlarını hazırlayıp kaynaklarıyla yayımlayabilirsiniz. "
-                                          "Her okulun saymanı yayını ayrıca doğrular.", ft.Icons.HUB_OUTLINED))
-            self.kontrol.controls = c
+            self.kontrol.controls = [
+                kahraman_seridi("Merkez parametreleri", "Yayınları hazırlayıp kaynaklarıyla yayımlayın."),
+                bilgi_karti("Merkez", "Her okulun saymanı yayını ayrıca doğrular.", ft.Icons.HUB_OUTLINED)]
             self.guncelle()
             return
-        if okul.get("salt_okunur"):
-            c.append(uyari_seridi("Lisans süresi doldu. Kayıtları görebilirsiniz ama değiştiremezsiniz. "
-                                  "Lisansı yenilemek için satıcınıza başvurun."))
-        c.append(bilgi_karti("Yasal göreviniz", ROL_GOREVI.get(ben.get("rol"), ""), ft.Icons.GAVEL))
+        try:
+            self.ozet = await self.app.supa.rpc("dose_ana_ozet") or {}
+        except SupaHata:
+            self.ozet = {}
         try:
             gorev = await self.app.supa.rpc("dose_gorevlerim")
         except SupaHata:
             gorev = {"gorevler": []}
-        bekleyen = gorev.get("gorevler") or []
-        if bekleyen:
+        self.gorevler = gorev.get("gorevler") or []
+        self._ciz()
+
+    def duzen(self):
+        if self.app.ben and (self.app.ben.get("okul") or self.app.ben.get("merkez_mevzuat")):
+            self._ciz()
+
+    def _ciz(self):
+        ben = self.app.ben or {}
+        okul = ben.get("okul") or {}
+        ozet = self.ozet or {}
+        yil = ozet.get("yil") or takvim.bugun_istanbul().year
+        ad = (ben.get("ad_soyad") or "").split()[0] if ben.get("ad_soyad") else ""
+        c: list[ft.Control] = [
+            kahraman_seridi(
+                f"Merhaba{(' ' + ad) if ad else ''}",
+                f"{okul.get('ad') or 'DÖSE'} · {ben.get('rol') or ''} · {yil}"),
+        ]
+        if okul.get("salt_okunur"):
+            c.append(uyari_seridi("Lisans süresi doldu. Kayıtları görebilirsiniz ama değiştiremezsiniz. "
+                                  "Lisansı yenilemek için satıcınıza başvurun."))
+
+        kpis: list[ft.Control] = [
+            kpi_karti("Bekleyen görev", str(len(self.gorevler)), ft.Icons.TASK_ALT, MARKA_VURGU)]
+        if ozet.get("siparis_gorunur"):
+            kpis.append(kpi_karti(f"{yil} sipariş", str(ozet.get("siparis") or 0),
+                                  ft.Icons.SHOPPING_CART, ANA_RENK))
+        if ozet.get("finans_gorunur"):
+            kpis.extend([
+                kpi_karti("Satış (net)", self._para(ozet.get("fatura_satis")),
+                          ft.Icons.TRENDING_UP, "#2f9e6b"),
+                kpi_karti("Alış (net)", self._para(ozet.get("fatura_alis")),
+                          ft.Icons.TRENDING_DOWN, "#b3261e"),
+                kpi_karti("Kasa", self._para(ozet.get("kasa_bakiye")),
+                          ft.Icons.ACCOUNT_BALANCE_WALLET, "#2f6aa3"),
+                kpi_karti("Banka", self._para(ozet.get("banka_bakiye")),
+                          ft.Icons.ACCOUNT_BALANCE, "#1f4e79"),
+            ])
+            if ozet.get("hp_hasilat") is not None:
+                kpis.append(kpi_karti("HP hasılat (ay)", self._para(ozet.get("hp_hasilat")),
+                                      ft.Icons.EVENT_NOTE, MARKA_VURGU))
+        c.append(ft.ResponsiveRow(kpis, spacing=12, run_spacing=12))
+
+        grafik_kolonlari: list[ft.Control] = []
+        durum = ozet.get("siparis_durum") or {}
+        if durum:
+            maks = max(int(v) for v in durum.values()) or 1
+            cubuklar = [
+                oran_cubugu(str(ad_), float(adet), float(maks),
+                            DURUM_RENKLERI.get(str(ad_), ANA_RENK), sag_metin=str(adet))
+                for ad_, adet in sorted(durum.items(), key=lambda x: -int(x[1]))]
+            grafik_kolonlari.append(yuzey_kart(
+                ft.Text(f"{yil} sipariş durumu", weight=ft.FontWeight.BOLD),
+                *cubuklar, padding=18, genislik_kolon={"xs": 12, "md": 6}))
+        if ozet.get("finans_gorunur"):
+            try:
+                from decimal import Decimal
+                satis = float(Decimal(str(ozet.get("fatura_satis") or 0)))
+                alis = float(Decimal(str(ozet.get("fatura_alis") or 0)))
+            except Exception:
+                satis = alis = 0.0
+            maks_f = max(satis, alis, 1.0)
+            grafik_kolonlari.append(yuzey_kart(
+                ft.Text(f"{yil} fatura özeti", weight=ft.FontWeight.BOLD),
+                oran_cubugu("Satış", satis, maks_f, "#2f9e6b", sag_metin=self._para(satis)),
+                oran_cubugu("Alış", alis, maks_f, "#b3261e", sag_metin=self._para(alis)),
+                padding=18, genislik_kolon={"xs": 12, "md": 6}))
+        if grafik_kolonlari:
+            c.append(ft.ResponsiveRow(grafik_kolonlari, spacing=12, run_spacing=12))
+
+        c.append(bilgi_karti("Yasal göreviniz", ROL_GOREVI.get(ben.get("rol"), ""), ft.Icons.GAVEL))
+
+        if self.gorevler:
             satirlar = [
                 liste_satiri(g.get("baslik") or g.get("ozet") or "Görev", g.get("ozet") or "",
                              on_click=lambda _, s=g.get("sayfa"): self.app.page.run_task(self.app.sayfa_ac, s) if s else None,
                              trailing=ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ANA_RENK))
-                for g in bekleyen[:12]]
-            c.append(yuzey_kart(ft.Text("Bugün ne yapmalıyım?", weight=ft.FontWeight.BOLD), *satirlar, padding=16))
+                for g in self.gorevler[:12]]
+            c.append(yuzey_kart(ft.Text("Bugün ne yapmalıyım?", weight=ft.FontWeight.BOLD),
+                                *satirlar, padding=16))
         else:
             c.append(ft.Text("Şu an size düşen bekleyen onay yok.", size=13, color=METIN_IKINCIL))
+
         if ben.get("rol") in SURE_GOREN:
             sureler = takvim.yaklasan_sureler(takvim.bugun_istanbul())
             satirlar = []
@@ -187,11 +281,14 @@ class AnaEkran(Ekran):
                     takvim.sure_cumlesi(s),
                     f"Son gün {s['son_gun'].strftime('%d.%m.%Y')}. {s['gecikme']}",
                     trailing=ft.Icon(ft.Icons.EVENT, color="#b3261e" if acil else ANA_RENK)))
-            c.append(yuzey_kart(ft.Text("Yaklaşan yasal süreler", weight=ft.FontWeight.BOLD), *satirlar, padding=16))
+            c.append(yuzey_kart(ft.Text("Yaklaşan yasal süreler", weight=ft.FontWeight.BOLD),
+                                *satirlar, padding=16))
+
         lisans = okul.get("lisans_bitis")
-        c.append(ft.Text(f"Kurum kodu {okul.get('kurum_kodu', '')} · Lisans "
-                         f"{'bitişi ' + T.gosterim('tarih', lisans) if lisans else 'süresiz'}",
-                         size=12, color=METIN_IKINCIL))
+        c.append(ft.Text(
+            f"Kurum kodu {okul.get('kurum_kodu', '')} · Lisans "
+            f"{'bitişi ' + T.gosterim('tarih', lisans) if lisans else 'süresiz'}",
+            size=12, color=METIN_IKINCIL))
         self.kontrol.controls = c
         self.guncelle()
 
@@ -1009,7 +1106,7 @@ class SiparisEkrani(Ekran):
 class KullaniciEkrani(Ekran):
     def __init__(self, app):
         super().__init__(app)
-        self.veri: dict = {"uyeler": [], "davetler": []}
+        self.veri: dict = {"uyeler": [], "davetler": [], "sayfalar": []}
         self.bolumler: list[tuple[str, str]] = []
         self.personeller: list[tuple[str, str]] = []
 
@@ -1030,8 +1127,10 @@ class KullaniciEkrani(Ekran):
     def _ciz(self):
         uyeler = []
         for u in self.veri.get("uyeler") or []:
+            ozel = u.get("yetki_ozel") or {}
+            ozel_not = f" · {len(ozel)} özel yetki" if ozel else ""
             alt = " · ".join(x for x in (u.get("rol"), u.get("eposta"), self._bolum_adi(u.get("bolum_id")),
-                                         None if u.get("aktif") else "Pasif") if x)
+                                         None if u.get("aktif") else "Pasif") if x) + ozel_not
             uyeler.append(ft.ListTile(
                 leading=ft.Icon(ft.Icons.PERSON if u.get("aktif") else ft.Icons.PERSON_OFF),
                 title=ft.Text(f"{u.get('ad_soyad') or u.get('eposta')}{' (siz)' if u.get('ben') else ''}"),
@@ -1051,7 +1150,8 @@ class KullaniciEkrani(Ekran):
                               on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
                               ft.Icons.GROUP),
             ft.Text("Davet ettiğiniz kişi aynı e-postayla hesap açıp doğruladığında okula kendiliğinden bağlanır. "
-                    "Alan şefi ve öğretmen yalnız atandığı bölümü görür.", size=12,
+                    "Okul Müdürü ve Sistem Yöneticisi tüm sayfalarda yazabilir; diğer kullanıcılara rol dışında "
+                    "sayfa yetkisi (yazma / okuma / kapalı) verebilirsiniz.", size=12,
                     color=ft.Colors.ON_SURFACE_VARIANT),
             ft.Text("Üyeler", weight=ft.FontWeight.BOLD), *uyeler,
             ft.Text("Bekleyen davetler", weight=ft.FontWeight.BOLD),
@@ -1069,11 +1169,45 @@ class KullaniciEkrani(Ekran):
         }
         return k
 
+    def _yetki_formu(self, uye: dict) -> tuple[list[ft.Control], dict[str, ft.Dropdown]]:
+        """Özel sayfa yetkisi; müdür/sistem için gösterilmez (roller zaten tam yetkili)."""
+        if uye.get("ben") or uye.get("rol") in ("Okul Müdürü", "Sistem Yöneticisi"):
+            return [ft.Text(
+                "Kendi hesabınızın veya Okul Müdürü / Sistem Yöneticisi rollerinin özel yetkisi düzenlenmez; "
+                "bu roller tüm sayfalarda yazabilir.",
+                size=12, color=METIN_IKINCIL)], {}
+        ozel = uye.get("yetki_ozel") or {}
+        kutular: dict[str, ft.Dropdown] = {}
+        satirlar: list[ft.Control] = [
+            ft.Text("Sayfa yetkileri", weight=ft.FontWeight.BOLD),
+            ft.Text("Boş bırakılanlar rolün varsayılanına uyar. Yazma / okuma / kapalı ile rolü aşabilir "
+                    "veya kısıtlayabilirsiniz.", size=12, color=METIN_IKINCIL)]
+        for s in self.veri.get("sayfalar") or []:
+            kod = s.get("sayfa")
+            if not kod:
+                continue
+            mevcut = ozel.get(kod) if isinstance(ozel, dict) else None
+            if mevcut not in ("y", "g", "-"):
+                mevcut = "varsayilan"
+            kutu = secim_kutusu(s.get("baslik") or kod, YETKI_SECENEKLERI, mevcut, bos=False)
+            kutular[kod] = kutu
+            satirlar.append(kutu)
+        return satirlar, kutular
+
+    @staticmethod
+    def _yetki_payload(kutular: dict[str, ft.Dropdown]) -> dict:
+        out = {}
+        for sayfa, kutu in kutular.items():
+            deger = (kutu.value or "").strip()
+            if deger in ("y", "g", "-"):
+                out[sayfa] = deger
+        return out
+
     @staticmethod
     def _sayi(deger):
         return int(deger) if deger else None
 
-    def _dialog(self, baslik: str, kontroller: list, etiket: str, is_):
+    def _dialog(self, baslik: str, kontroller: list, etiket: str, is_, genislik: int = 420):
         dugme = ft.FilledButton(etiket)
 
         async def tik(_):
@@ -1085,7 +1219,8 @@ class KullaniciEkrani(Ekran):
         dugme.on_click = tik
         self.app.page.show_dialog(ft.AlertDialog(
             modal=True, title=ft.Text(baslik), scrollable=True,
-            content=ft.Column(kontroller, tight=True, spacing=12, width=420),
+            content=ft.Column(kontroller, tight=True, spacing=12, width=genislik, scroll=ft.ScrollMode.AUTO,
+                              height=min(520, 80 + 48 * max(1, len(kontroller)))),
             actions=[ft.TextButton("Vazgeç", on_click=lambda _: self.app.page.pop_dialog()), dugme]))
 
     def _davet(self):
@@ -1102,16 +1237,20 @@ class KullaniciEkrani(Ekran):
     def _duzenle(self, uye: dict):
         k = self._kisi_formu(uye, False)
         aktif = ft.Checkbox(label="Aktif", value=bool(uye.get("aktif")))
+        yetki_satir, yetki_kutulari = self._yetki_formu(uye)
 
         async def is_():
-            await self.app.supa.rpc("dose_kullanici_guncelle", p_kullanici=uye["id"],
-                                    p_ad_soyad=k["ad_soyad"].value.strip(), p_rol=k["rol"].value,
-                                    p_bolum_id=self._sayi(k["bolum_id"].value),
-                                    p_personel_id=self._sayi(k["personel_id"].value), p_aktif=bool(aktif.value))
+            await self.app.supa.rpc(
+                "dose_kullanici_guncelle", p_kullanici=uye["id"],
+                p_ad_soyad=k["ad_soyad"].value.strip(), p_rol=k["rol"].value,
+                p_bolum_id=self._sayi(k["bolum_id"].value),
+                p_personel_id=self._sayi(k["personel_id"].value), p_aktif=bool(aktif.value),
+                p_yetki_ozel=self._yetki_payload(yetki_kutulari) if yetki_kutulari else None)
             if uye.get("ben"):
                 await self.app.ben_yukle()
 
-        self._dialog("Kullanıcıyı düzenle", list(k.values()) + [aktif], "Kaydet", is_)
+        self._dialog("Kullanıcıyı düzenle", list(k.values()) + [aktif] + yetki_satir, "Kaydet", is_,
+                     genislik=460)
 
     def _davet_sil(self, davet: dict):
         async def is_():
