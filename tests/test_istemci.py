@@ -170,6 +170,15 @@ class DonusumTest(unittest.TestCase):
             T.siparis_kalem_tutari(1, 10, 101)
 
 
+class SurumTest(unittest.TestCase):
+    def test_surum_karsilastirma(self):
+        from istemci import surum as S
+        self.assertEqual(S.SURUM, "1.8.0")
+        self.assertTrue(S.surum_eski("1.7.6", "1.8.0"))
+        self.assertFalse(S.surum_eski("1.8.0", "1.8.0"))
+        self.assertFalse(S.surum_eski("1.9.0", "1.8.0"))
+
+
 class SecenekTohumTest(unittest.TestCase):
     def test_tohum_mevzuatla_ayni(self):
         sql = (KOK / "supabase" / "migrations" / "20261030000100_cok_okul_sema.sql").read_text(encoding="utf-8")
@@ -260,7 +269,8 @@ class SahteSayfa:
 BEN = {"uye": True, "rol": "Okul Müdürü", "ad_soyad": "Ali Veli", "eposta": "m@o.k12.tr", "bolum_id": None,
        "yetkiler": {"kurum": "y", "bolum": "y", "personel": "y", "ogrenci": "g", "cari": "g", "malzeme": "g",
                     "urun": "g", "siparis": "y", "kullanici": "y", "islem_kaydi": "g", "resmi_yazi": "y"},
-       "okul": {"id": 1, "ad": "Derik MTAL", "kurum_kodu": "123456", "lisans_bitis": None, "salt_okunur": False}}
+       "okul": {"id": 1, "ad": "Derik MTAL", "kurum_kodu": "123456", "lisans_bitis": None, "salt_okunur": False},
+       "uygulama": {"surum": "1.8.0", "min_surum": "1.7.0", "duyuru": "", "aktif": False}}
 
 
 class ArayuzTest(unittest.TestCase):

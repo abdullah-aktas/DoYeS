@@ -210,6 +210,10 @@ class AnaEkran(Ekran):
         if okul.get("salt_okunur"):
             c.append(uyari_seridi("Lisans süresi doldu. Kayıtları görebilirsiniz ama değiştiremezsiniz. "
                                   "Lisansı yenilemek için satıcınıza başvurun."))
+        uyg = ben.get("uygulama") or {}
+        if uyg.get("aktif") and (uyg.get("duyuru") or "").strip():
+            c.append(uyari_seridi(
+                f"Güncelleme {uyg.get('surum') or ''}: {(uyg.get('duyuru') or '').strip()}"))
 
         kpis: list[ft.Control] = [
             kpi_karti("Bekleyen görev", str(len(self.gorevler)), ft.Icons.TASK_ALT, MARKA_VURGU)]

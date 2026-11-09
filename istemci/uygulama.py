@@ -7,13 +7,14 @@ import os
 import flet as ft
 
 try:
-    from . import ayar, takvim, tema
+    from . import ayar, surum as SUR, takvim, tema
     from . import tanimlar as T
     from .supa import Supa, SupaHata
     from .tema import (ANA_RENK, GIRIS_GRADYANI, KENAR, MARKA_VURGU, METIN, METIN_IKINCIL, YUZEY, ZEMIN,
                        aciklama, baslik, deneme_rozeti, giris_kart, ozellik_satiri)
 except ImportError:
     import ayar
+    import surum as SUR
     import takvim
     import tema
     import tanimlar as T
@@ -109,6 +110,7 @@ class Uygulama:
                                   bgcolor=ZEMIN)
         self.menu_kutu: ft.Container | None = None
         self._dongu: asyncio.Task | None = None
+        self._guncelleme_gosterildi = False
 
     # ------------------------------------------------------------------ helpers
     @property
@@ -220,6 +222,42 @@ class Uygulama:
         await self.sayfa_ac("ana")
         if self._dongu is None or self._dongu.done():
             self._dongu = asyncio.ensure_future(self._izle())
+        self._guncelleme_kontrol()
+
+    def _guncelleme_kontrol(self):
+        """Sunucudaki duyuru / daha yeni sürüm varsa oturumda bir kez bildir."""
+        if self._guncelleme_gosterildi:
+            return
+        uyg = (self.ben or {}).get("uygulama") or {}
+        uzak = uyg.get("surum") or ""
+        duyuru = (uyg.get("duyuru") or "").strip()
+        aktif = bool(uyg.get("aktif")) and bool(duyuru)
+        eski = SUR.surum_eski(SUR.SURUM, uzak)
+        if not aktif and not eski:
+            return
+        self._guncelleme_gosterildi = True
+        baslik_metin = f"DÖSE {uzak or SUR.SURUM} güncellemesi" if (eski or uzak) else "Duyuru"
+        govde = duyuru or f"Yeni sürüm {uzak} yayınlandı. Lütfen uygulamayı güncelleyin."
+        if eski:
+            govde = f"Bu cihaz {SUR.SURUM} sürümünde; önerilen {uzak}.\n\n{govde}"
+        url = uyg.get("indir_url") or uyg.get("windows_url") or ""
+        aksiyonlar = [ft.TextButton("Tamam", on_click=lambda _: self.page.pop_dialog())]
+        if url:
+            async def indir(_, u=url):
+                try:
+                    ul = ft.UrlLauncher()
+                    self.page.services.append(ul)
+                    await ul.launch_url(u)
+                except Exception:
+                    import webbrowser
+                    webbrowser.open(u)
+                self.page.pop_dialog()
+
+            aksiyonlar.insert(0, ft.TextButton("İndir / sürüm notları", on_click=indir))
+        self.page.show_dialog(ft.AlertDialog(
+            modal=True, title=ft.Text(baslik_metin),
+            content=ft.Text(govde + (f"\n\n{url}" if url else ""), size=13),
+            actions=aksiyonlar))
 
     async def cikis(self, _=None):
         if self.ekran is not None and self.ekran.islemde:
@@ -233,6 +271,7 @@ class Uygulama:
     async def _cikis_uygula(self):
         self.ben = None
         self.ekran = None
+        self._guncelleme_gosterildi = False
         await self.supa.cikis()
         self.giris_ekrani()
 
@@ -541,7 +580,8 @@ class Uygulama:
             logo(120, 44) if self.genis else uygulama_ikonu(36),
             ft.Column([ft.Text("DÖSE Yönetim", size=18 if self.genis else 15, weight=ft.FontWeight.BOLD,
                                color=METIN),
-                       ft.Text(okul.get("ad", ""), size=12, color=METIN_IKINCIL,
+                       ft.Text((f"{okul['ad']} · " if okul.get("ad") else "") + f"v{SUR.SURUM}",
+                               size=12, color=METIN_IKINCIL,
                                max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)], spacing=0, expand=True),
             kullanici,
             self._lisans_rozeti(okul),

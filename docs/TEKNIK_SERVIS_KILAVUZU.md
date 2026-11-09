@@ -126,7 +126,7 @@ flet build web
 .\apk_aab_olustur.bat
 ```
 
-Sürüm: `istemci/pyproject.toml` → `version` (şu an 1.7.4). Android izinleri yalnız `INTERNET` ve
+Sürüm: `istemci/pyproject.toml` → `version` (şu an 1.8.0; `istemci/surum.py` ile aynı). Android izinleri yalnız `INTERNET` ve
 `ACCESS_NETWORK_STATE`. Çıktılar `istemci/build/`, `istemci/store/`, `*.apk` / `*.aab` — git’e eklenmez.
 
 ## 7. Sık sorunlar
