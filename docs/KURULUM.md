@@ -28,6 +28,9 @@ npx supabase db push
 `PROJE_REF`, Dashboard URL'sindeki proje kimliğidir (ör. `bzirnfsgdswcwwutmwdi`).
 
 5. **Authentication → Providers → Email** açık olsun; e-posta doğrulaması açık kalsın.
+   Site URL / Redirect (kendi web siteniz yoksa): `https://abdullah-aktas.github.io/DoYeS/`
+   — şifre sıfırlama ve e-posta doğrulama bu ücretsiz sayfaya düşer; ardından masaüstü/mobil uygulamadan
+   giriş yapılır. `supabase/config.toml` → `npx supabase config push` ile de güncellenir.
 6. İstemci ayarı: `istemci/ayar.py` içindeki varsayılan URL/anahtar veya ortam değişkenleri
    `DOSE_SUPABASE_URL` / `DOSE_SUPABASE_ANAHTAR`.
 7. İlk okulu açmak (SQL Editor, **service_role** / Dashboard SQL; istemci değil):

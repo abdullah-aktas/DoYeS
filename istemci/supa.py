@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Awaitable, Callable
+
+_AUTH_DONUS_VARSAYILAN = "https://abdullah-aktas.github.io/DoYeS/"
 
 Tasima = Callable[[str, str, dict, bytes | None], Awaitable[tuple[int, str]]]
 
@@ -123,13 +126,18 @@ def filtre(deger: Any) -> str:
 
 class Supa:
     def __init__(self, url: str, anahtar: str, tasima: Tasima | None = None,
-                 oturum_degisti: Callable[[dict | None], Awaitable[None]] | None = None):
+                 oturum_degisti: Callable[[dict | None], Awaitable[None]] | None = None,
+                 auth_donus: str | None = None):
         self.url = url.rstrip("/")
         self.anahtar = anahtar
         self.tasima = tasima or varsayilan_tasima()
         self.oturum: dict | None = None
         self.oturum_degisti = oturum_degisti
+        self.auth_donus = (auth_donus or os.environ.get("DOSE_AUTH_DONUS") or _AUTH_DONUS_VARSAYILAN).rstrip("/") + "/"
         self._kilit = asyncio.Lock()
+
+    def _donus_sorgu(self) -> str:
+        return urllib.parse.urlencode({"redirect_to": self.auth_donus})
 
     # ------------------------------------------------------------------ transport
     async def _gonder(self, yontem: str, yol: str, govde: Any = None, basliklar: dict | None = None,
@@ -171,8 +179,10 @@ class Supa:
 
     # ------------------------------------------------------------------ auth
     async def kaydol(self, eposta: str, sifre: str) -> dict:
-        veri = await self._gonder("POST", "/auth/v1/signup", {"email": eposta.strip().lower(), "password": sifre},
-                                  yetkili=False)
+        veri = await self._gonder(
+            "POST", f"/auth/v1/signup?{self._donus_sorgu()}",
+            {"email": eposta.strip().lower(), "password": sifre, "email_redirect_to": self.auth_donus},
+            yetkili=False)
         if veri and veri.get("access_token"):
             await self._oturumu_ayarla(veri)
         return veri or {}
@@ -201,11 +211,14 @@ class Supa:
         await self._oturumu_birak()
 
     async def sifre_sifirla(self, eposta: str):
-        await self._gonder("POST", "/auth/v1/recover", {"email": eposta.strip().lower()}, yetkili=False)
+        await self._gonder(
+            "POST", f"/auth/v1/recover?{self._donus_sorgu()}",
+            {"email": eposta.strip().lower()}, yetkili=False)
 
     async def dogrulama_gonder(self, eposta: str):
-        await self._gonder("POST", "/auth/v1/resend", {"type": "signup", "email": eposta.strip().lower()},
-                           yetkili=False)
+        await self._gonder(
+            "POST", f"/auth/v1/resend?{self._donus_sorgu()}",
+            {"type": "signup", "email": eposta.strip().lower()}, yetkili=False)
 
     async def sifre_degistir(self, yeni: str):
         await self._gonder("PUT", "/auth/v1/user", {"password": yeni})

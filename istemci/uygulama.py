@@ -97,7 +97,8 @@ def ortali(*kontroller: ft.Control) -> ft.Control:
 class Uygulama:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.supa = Supa(ayar.SUPABASE_URL, ayar.SUPABASE_ANAHTAR, oturum_degisti=self._oturum_degisti)
+        self.supa = Supa(ayar.SUPABASE_URL, ayar.SUPABASE_ANAHTAR, oturum_degisti=self._oturum_degisti,
+                         auth_donus=ayar.AUTH_DONUS)
         self.ben: dict | None = None
         self.secenek: dict[str, list[tuple[str, str]]] = {}
         self.sayfa = "ana"

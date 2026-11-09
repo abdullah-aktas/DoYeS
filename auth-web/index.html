@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DÖSE Yönetim — Hesap</title>
+  <style>
+    :root { --ana: #1f4e79; --zemin: #f0f4f8; --kenar: #d7e0ea; --metin: #1a2332; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: linear-gradient(145deg, #0d2c4a, var(--ana), #2f6aa3); min-height: 100vh; color: var(--metin); }
+    main { max-width: 420px; margin: 0 auto; padding: 48px 16px; }
+    .kart { background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 12px 32px rgba(0,0,0,.2); }
+    h1 { margin: 0 0 8px; font-size: 1.35rem; color: var(--ana); }
+    p { margin: 0 0 16px; color: #5c6b7a; line-height: 1.45; font-size: .95rem; }
+    label { display: block; font-size: .85rem; margin: 12px 0 4px; }
+    input { width: 100%; padding: 12px; border: 1px solid var(--kenar); border-radius: 8px; font-size: 1rem; }
+    button { margin-top: 16px; width: 100%; padding: 12px; border: 0; border-radius: 8px; background: var(--ana); color: #fff; font-weight: 600; font-size: 1rem; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: default; }
+    .ok { color: #0d6a3f; background: #e8f6ee; padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
+    .hata { color: #8a1f1f; background: #fdecec; padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
+    .gizli { display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kart">
+      <h1>DÖSE Yönetim</h1>
+      <p id="aciklama">Bağlantı işleniyor…</p>
+      <div id="onay" class="gizli">
+        <p class="ok">E-posta doğrulandı. Masaüstü veya mobil uygulamadan giriş yapabilirsiniz.</p>
+      </div>
+      <form id="form" class="gizli">
+        <p>Yeni şifrenizi belirleyin (en az 8 karakter). Sonra uygulamadan giriş yapın.</p>
+        <label for="s1">Yeni şifre</label>
+        <input id="s1" type="password" autocomplete="new-password" minlength="8" required />
+        <label for="s2">Şifre tekrar</label>
+        <input id="s2" type="password" autocomplete="new-password" minlength="8" required />
+        <button id="kaydet" type="submit">Şifreyi kaydet</button>
+      </form>
+      <div id="mesaj"></div>
+    </div>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const URL = "https://bzirnfsgdswcwwutmwdi.supabase.co";
+    const ANON = "sb_publishable_CSADmKJ3hXm-9jCT7BIfZg_pecVOO5Y";
+    const sb = supabase.createClient(URL, ANON);
+    const aciklama = document.getElementById("aciklama");
+    const form = document.getElementById("form");
+    const onay = document.getElementById("onay");
+    const mesaj = document.getElementById("mesaj");
+
+    function params() {
+      const h = new URLSearchParams(location.hash.replace(/^#/, ""));
+      const q = new URLSearchParams(location.search);
+      const get = (k) => h.get(k) || q.get(k);
+      return {
+        access_token: get("access_token"),
+        refresh_token: get("refresh_token"),
+        type: get("type"),
+        error: get("error_description") || get("error"),
+      };
+    }
+
+    async function baslat() {
+      const p = params();
+      if (p.error) {
+        aciklama.textContent = "Bağlantı geçersiz veya süresi dolmuş.";
+        mesaj.innerHTML = `<div class="hata">${p.error}</div>`;
+        return;
+      }
+      if (!p.access_token || !p.refresh_token) {
+        aciklama.textContent = "Bu sayfa e-posta doğrulama ve şifre sıfırlama içindir.";
+        mesaj.innerHTML = `<p>Masaüstü: <b>dose-mobil.exe</b> · Mobil: <b>DOSE_Mobil</b> APK ile giriş yapın.</p>`;
+        return;
+      }
+      const { error } = await sb.auth.setSession({
+        access_token: p.access_token,
+        refresh_token: p.refresh_token,
+      });
+      if (error) {
+        aciklama.textContent = "Oturum açılamadı.";
+        mesaj.innerHTML = `<div class="hata">${error.message}</div>`;
+        return;
+      }
+      if (p.type === "recovery") {
+        aciklama.textContent = "Şifre sıfırlama";
+        form.classList.remove("gizli");
+        return;
+      }
+      // signup / invite / magiclink / email change
+      aciklama.textContent = "Hesap doğrulama";
+      onay.classList.remove("gizli");
+      history.replaceState(null, "", location.pathname);
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const s1 = document.getElementById("s1").value;
+      const s2 = document.getElementById("s2").value;
+      const dugme = document.getElementById("kaydet");
+      mesaj.innerHTML = "";
+      if (s1.length < 8) {
+        mesaj.innerHTML = `<div class="hata">Şifre en az 8 karakter olmalı.</div>`;
+        return;
+      }
+      if (s1 !== s2) {
+        mesaj.innerHTML = `<div class="hata">Şifreler eşleşmiyor.</div>`;
+        return;
+      }
+      dugme.disabled = true;
+      const { error } = await sb.auth.updateUser({ password: s1 });
+      dugme.disabled = false;
+      if (error) {
+        mesaj.innerHTML = `<div class="hata">${error.message}</div>`;
+        return;
+      }
+      form.classList.add("gizli");
+      aciklama.textContent = "Şifre güncellendi";
+      mesaj.innerHTML = `<div class="ok">Tamam. Masaüstü veya mobil uygulamayı açıp yeni şifrenizle giriş yapın.</div>`;
+      history.replaceState(null, "", location.pathname);
+      await sb.auth.signOut();
+    });
+
+    baslat();
+  </script>
+</body>
+</html>

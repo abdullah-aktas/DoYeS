@@ -7,8 +7,32 @@ extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
 [db]
-major_version = 15
+major_version = 17
 
 [db.migrations]
 enabled = true
 schema_paths = []
+
+[auth]
+# Masaüstü + mobil için ortak e-posta dönüş adresi (ücretsiz GitHub Pages; kendi siteniz gerekmez)
+site_url = "https://abdullah-aktas.github.io/DoYeS/"
+additional_redirect_urls = [
+  "https://abdullah-aktas.github.io/DoYeS/",
+  "https://abdullah-aktas.github.io/DoYeS/index.html",
+]
+
+[auth.email]
+enable_confirmations = true
+max_frequency = "1m0s"
+otp_length = 8
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[db.pooler]
+default_pool_size = 15
+max_client_conn = 200
+
+[storage.vector]
+enabled = false
