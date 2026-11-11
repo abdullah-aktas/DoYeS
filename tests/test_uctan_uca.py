@@ -575,6 +575,11 @@ class UctanUcaTest(unittest.TestCase):
             ekran.ust["belge_turu"].value = "e-Fatura"
             for kutu in ekran.alim_isaretleri.values():
                 kutu.value = True
+            ekran.alim_ihtiyac.value = "Atölye üretimi için kereste ihtiyacı"
+            ekran.alim_yaklasik.value = "21,00"
+            ekran.teklif_satirlari[0]["firma"].value = "Malzeme Ltd"
+            ekran.teklif_satirlari[0]["tutar"].value = "21,00"
+            ekran.teklif_satirlari[0]["secildi"].value = True
             satir = ekran.alis_satirlari[0]
             satir["malzeme"].value = str(kart["id"])
             satir["aciklama"].value = "Kereste alımı"
@@ -584,6 +589,7 @@ class UctanUcaTest(unittest.TestCase):
             satir["iskonto"].value = "0"
             ekran._degisti()
             await ekran._onizle(dugme(sayman_sayfa, "Faturayı önizle"))
+            self.assertIsNotNone(ekran.onizleme)
             self.assertEqual(ekran.onizleme["detay"]["net_tutar"], "25.20")
             satir["fiyat"].value = "11"
             await ekran._kaydet(dugme(sayman_sayfa, "Faturayı kaydet"))

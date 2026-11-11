@@ -31,6 +31,9 @@ Bu sayfa tüm roller içindir. Rolünüze özel adımlar kendi kılavuzunuzdadı
 
 ## Tanım içe aktarma (Excel / PDF)
 
+Web ve masaüstünde çalışır (dosya içeriği okunur). **`.xls` değil, `.xlsx`** kullanın.
+Hatalı satırlar aktarım sonunda satır numarasıyla listelenir.
+
 Tanımlar menüsünde (bölüm, personel, öğrenci, cari, malzeme, ürün) yazma yetkiniz varsa:
 
 1. **Şablon** → boş `.xlsx` indirilir (`Belgelerim\DÖSE Belgeler` veya platform belgeler klasörü).

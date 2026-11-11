@@ -1,6 +1,7 @@
 """Excel dışa ve içe aktarma."""
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 
 
@@ -12,6 +13,14 @@ def _ox():
     except ImportError as e:
         raise ImportError("Excel için openpyxl gerekir (pip install openpyxl).") from e
     return Workbook, load_workbook, Alignment, Border, Font, PatternFill, Side, get_column_letter
+
+
+def _xls_uyari(ad: str | None = None):
+    uzanti = Path(ad or "").suffix.lower()
+    if uzanti == ".xls":
+        raise ValueError(
+            "Eski .xls biçimi desteklenmez. Excel'de «Farklı Kaydet → Excel Çalışma Kitabı (*.xlsx)» "
+            "yapın veya uygulamadan Şablon indirip doldurun.")
 
 
 def disa_aktar(yol: Path, sayfalar: list[tuple[str, list, list]], baslik: str | None = None) -> Path:
@@ -53,10 +62,23 @@ def _sayfa_adi(ad: str) -> str:
     return ad[:31] or "Sayfa"
 
 
-def oku(yol: Path) -> dict[str, list[list]]:
-    """Tüm sayfaları hücre değerleri (hesaplanmış) olarak döndürür."""
+def oku(yol: Path | None = None, veri: bytes | None = None, ad: str | None = None) -> dict[str, list[list]]:
+    """Tüm sayfaları hücre değerleri (hesaplanmış) olarak döndürür. yol veya veri (bytes) verin."""
+    _xls_uyari(ad or (str(yol) if yol else None))
     _, load_workbook, *_ = _ox()
-    wb = load_workbook(str(yol), data_only=True, read_only=True)
+    if veri is not None:
+        if not veri:
+            raise ValueError("Excel dosyası boş.")
+        kaynak = BytesIO(veri)
+    elif yol is not None:
+        yol = Path(yol)
+        if not yol.is_file():
+            raise ValueError("Excel dosyası bulunamadı.")
+        _xls_uyari(yol.name)
+        kaynak = str(yol)
+    else:
+        raise ValueError("Excel dosyası veya içeriği verilmedi.")
+    wb = load_workbook(kaynak, data_only=True, read_only=True)
     sonuc = {}
     for ws in wb.worksheets:
         sonuc[ws.title] = [list(r) for r in ws.iter_rows(values_only=True)]
@@ -90,15 +112,15 @@ OGRENCI_ICE_AKTARMA = {
     "iban": ["iban"], "_gorev": ["görevi", "unvan"],
 }
 CARI_ICE_AKTARMA = {
-    "kod": ["cari kod", "kod", "cari no"], "unvan": ["unvan", "adı soyadı", "ad soyad", "firma", "ünvan"] + AD_BASLIKLARI,
-    "tur": ["tür", "tur", "cari türü"], "vkn_tckn": ["vkn", "vergi no", "vergi kimlik"] + TCKN_BASLIKLARI,
-    "vergi_dairesi": ["vergi dairesi"], "telefon": ["telefon"], "eposta": ["eposta", "e-posta", "email"],
+    "kod": ["cari kod", "kod", "cari no", "cari kodu"], "unvan": ["unvan", "adı soyadı", "ad soyad", "firma", "ünvan", "unvan / adı soyadı"] + AD_BASLIKLARI,
+    "tur": ["tür", "tur", "cari türü", "turu"], "vkn_tckn": ["vkn", "vergi no", "vergi kimlik", "vkn / t"] + TCKN_BASLIKLARI,
+    "vergi_dairesi": ["vergi dairesi"], "telefon": ["telefon", "tel"], "eposta": ["eposta", "e-posta", "email"],
     "adres": ["adres"], "iban": ["iban"],
 }
 MALZEME_ICE_AKTARMA = {
-    "kod": ["stok kod", "malzeme kod", "kod"], "ad": ["malzeme adı", "malzeme", "ad", "ürün adı"],
-    "tur": ["tür", "tur"], "birim": ["birim"], "kdv_orani": ["kdv", "kdv oranı"],
-    "kritik_stok": ["kritik stok", "min stok"],
+    "kod": ["stok kod", "malzeme kod", "kod", "stok kodu"], "ad": ["malzeme adı", "malzeme", "ad", "ürün adı"],
+    "tur": ["tür", "tur", "turu"], "birim": ["birim"], "kdv_orani": ["kdv", "kdv oranı", "kdv orani"],
+    "kritik_stok": ["kritik stok", "min stok", "kritik stok miktarı"],
 }
 URUN_ICE_AKTARMA = {
     "kod": ["ürün kod", "urun kod", "kod"], "ad": ["ürün adı", "urun adi", "ad", "hizmet"],
@@ -147,13 +169,16 @@ def _baslik_eslesmesi(satir, alan_esleri) -> dict[str, int]:
 AD_ALANLARI = ("ad_soyad", "unvan", "ad")
 
 
-def tablo_bul(yol: Path, alan_esleri: dict[str, list[str]], ad_alani: str | None = None,
-              tarama: int = 200) -> tuple[list[dict], str | None]:
+def tablo_bul(yol: Path | None = None, alan_esleri: dict[str, list[str]] | None = None,
+              ad_alani: str | None = None, tarama: int = 200, veri: bytes | None = None,
+              ad: str | None = None) -> tuple[list[dict], str | None]:
     """Başlık satırını otomatik bulur; alan_esleri: {alan: [olası başlık parçaları]}. Tüm sayfalarda en çok alanın
     eşleştiği (ad alanını da içeren) başlık seçilir. Aynı sayfada alt alta birden çok tablo olabileceği için okuma
     TOPLAM satırında, yeni bir başlık satırında veya art arda iki adsız satırda durur. (kayıtlar, sayfa adı)"""
+    if alan_esleri is None:
+        raise ValueError("alan_esleri zorunlu.")
     ad_alani = ad_alani or next((a for a in AD_ALANLARI if a in alan_esleri), "")
-    sayfalar = oku(yol)
+    sayfalar = oku(yol=yol, veri=veri, ad=ad)
     en_iyi = (0, None, None, None)
     for ad, satirlar in sayfalar.items():
         for i, satir in enumerate(satirlar[:tarama]):
@@ -186,16 +211,28 @@ def tablo_bul(yol: Path, alan_esleri: dict[str, list[str]], ad_alani: str | None
     return kayitlar, ad
 
 
-def eslestir_ve_oku(yol: Path, alan_esleri: dict[str, list[str]]) -> list[dict]:
-    return tablo_bul(yol, alan_esleri)[0]
+def eslestir_ve_oku(yol: Path | None = None, alan_esleri: dict[str, list[str]] | None = None,
+                    veri: bytes | None = None, ad: str | None = None) -> list[dict]:
+    return tablo_bul(yol=yol, alan_esleri=alan_esleri, veri=veri, ad=ad)[0]
 
 
-def tanim_oku(yol: Path, tablo: str) -> list[dict]:
-    """Tanım tablosu için başlık eşlemesiyle satırları okur."""
+def beklenen_basliklar(tablo: str) -> str:
+    basliklar = SABLON_BASLIKLARI.get(tablo) or []
+    return ", ".join(basliklar[:5]) + ("…" if len(basliklar) > 5 else "")
+
+
+def tanim_oku(yol: Path | None = None, tablo: str = "", veri: bytes | None = None,
+              ad: str | None = None) -> list[dict]:
+    """Tanım tablosu için başlık eşlemesiyle satırları okur. yol veya veri (bytes) verin."""
     esler = TABLO_ICE_AKTARMA.get(tablo)
     if not esler:
         raise ValueError(f"Bu tablo için Excel içe aktarma yok: {tablo}")
-    return eslestir_ve_oku(Path(yol), esler)
+    kayitlar = eslestir_ve_oku(yol=Path(yol) if yol else None, alan_esleri=esler, veri=veri, ad=ad)
+    if not kayitlar:
+        raise ValueError(
+            "Dosyada eşleşen satır bulunamadı. «Şablon» ile indirdiğiniz başlıkları kullanın. "
+            f"Örnek başlıklar: {beklenen_basliklar(tablo)}")
+    return kayitlar
 
 
 def sablon_yaz(tablo: str, yol: Path) -> Path:

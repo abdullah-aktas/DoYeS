@@ -8,7 +8,7 @@ Platform: [PLATFORM.md](PLATFORM.md) · Ortak: [ORTAK.md](ORTAK.md)
 ## Başlangıç sırası
 
 1. Merkez parametre yayını varsa **Okul parametre doğrulaması**ndan doğrulayın (yoksa parça başı / FC taslağı açılmaz).
-2. **Tanımlar:** bölüm → personel → cari → malzeme → ürün (gerekirse öğrenciler). Toplu giriş için **Şablon** / **Excel/PDF yükle** (bkz. [ORTAK.md](ORTAK.md#tanım-içe-aktarma-excel--pdf)).
+2. **Tanımlar:** bölüm → personel → cari → malzeme → ürün (gerekirse öğrenciler). Toplu giriş için **Şablon** / **Excel/PDF yükle** (bkz. [ORTAK.md](ORTAK.md#tanım-içe-aktarma-excel--pdf); web’de de çalışır, hatalı satırlar listelenir).
 3. **Muhasebe hesapları** ve açılış bakiyeleri (**Kasa / Banka → Açılış**).
 4. Sonra günlük işlemler: sipariş sonrası fatura, stok, tahsilat/ödeme.
 
@@ -23,9 +23,9 @@ Platform: [PLATFORM.md](PLATFORM.md) · Ortak: [ORTAK.md](ORTAK.md)
 
 1. Tedarikçi, belge no, tarih, kalemler.
 2. **Temin usulü** (ör. Doğrudan Temin), **gider türü**, **alış belge türü** zorunlu.
-3. Temine göre zorunlu alım belgelerini işaretleyin (ihtiyaç, yaklaşık maliyet, piyasa tutanağı, onay, muayene…).
-4. Doğrudan teminde matrah 2026 limiti (KDV hariç, diğer idareler için yayımlanan tutar) aşılırsa uyarı çıkar.
-5. Önizle → kaydet. Özet HTML indirilebilir; GİB gönderimi yoktur.
+3. Doğrudan teminde: ihtiyaç özeti, yaklaşık maliyet, teklifler (biri seçili) + zorunlu belge işaretleri.
+4. Limit aşımı (KDV hariç; büyükşehir kurumu daha yüksek limit) kaydı **engeller**.
+5. Önizle → kaydet. Özet HTML indirilebilir; GİB gönderimi yoktur. Asıl evrakı klasörleyin.
 
 Hata: gerekçeli **ters kayıt**. Önce bağlı kasa hareketini tersleyin.
 

@@ -653,7 +653,9 @@ class ArayuzTest(unittest.TestCase):
                 {"anahtar": "onay", "etiket": "Harcama yetkilisi onay belgesi", "zorunlu": True},
                 {"anahtar": "muayene", "etiket": "Muayene ve kabul tutanağı", "zorunlu": True},
                 {"anahtar": "odeme", "etiket": "Ödeme belgesi / banka dekontu", "zorunlu": False}]},
-            "dogrudan_temin_limit": "340391"})
+            "dogrudan_temin_limit": "340391",
+            "dogrudan_temin_limit_diger": "340391",
+            "dogrudan_temin_limit_buyuksehir": "1021827"})
         yollar[("POST", "/rest/v1/rpc/dose_faturalar")] = (200, [])
         yollar[("POST", "/rest/v1/rpc/dose_fatura_onizle")] = (200, {
             "imza": "a" * 32,
@@ -662,10 +664,10 @@ class ArayuzTest(unittest.TestCase):
                       "kalemler": [{"aciklama": "Hizmet", "tutar": "10.00", "iskonto": "0.00", "kdv": "2.00"}]}})
         yollar[("POST", "/rest/v1/rpc/dose_alim_onizle")] = (200, {
             "temin_usulu": "Doğrudan Temin", "gider_turu": "Hizmet Alımı", "belge_turu": "e-Fatura",
-            "belgeler": {}, "uyarilar": []})
+            "belgeler": {}, "detay": {}, "uyarilar": [], "dogrudan_temin_limit": "340391"})
         yollar[("POST", "/rest/v1/rpc/dose_alim_hazirla")] = (200, {
             "temin_usulu": "Doğrudan Temin", "gider_turu": "Hizmet Alımı", "belge_turu": "e-Fatura",
-            "belgeler": {}, "uyarilar": []})
+            "belgeler": {}, "detay": {}, "uyarilar": [], "dogrudan_temin_limit": "340391"})
         return yollar
 
     def _kasa_yollari(self):
@@ -787,6 +789,11 @@ class ArayuzTest(unittest.TestCase):
         ekran.ust["belge_turu"].value = "e-Fatura"
         for kutu in ekran.alim_isaretleri.values():
             kutu.value = True
+        ekran.alim_ihtiyac.value = "Atölye için bakım malzemesi ihtiyacı"
+        ekran.alim_yaklasik.value = "10,00"
+        ekran.teklif_satirlari[0]["firma"].value = "Tedarikçi A"
+        ekran.teklif_satirlari[0]["tutar"].value = "10,00"
+        ekran.teklif_satirlari[0]["secildi"].value = True
         satir = ekran.alis_satirlari[0]
         satir["hesap"].value = "740"
         satir["aciklama"].value = "Hizmet"
@@ -945,6 +952,9 @@ class ArayuzTest(unittest.TestCase):
         self.assertEqual(alimlar[0]["p_istek"], faturalar[0]["p_istek"])
         self.assertEqual(alimlar[0]["p_alim"]["temin_usulu"], "Doğrudan Temin")
         self.assertEqual(alimlar[0]["p_matrah"], "10.00")
+        self.assertIn("ihtiyac_ozeti", alimlar[0]["p_alim"])
+        self.assertEqual(len(alimlar[0]["p_alim"]["teklifler"]), 1)
+        self.assertTrue(alimlar[0]["p_alim"]["teklifler"][0]["secildi"])
         self.assertNotIn("alim", faturalar[0])
         self.assertNotIn("p_alim", faturalar[0])
 
@@ -1573,6 +1583,24 @@ class ExcelIceAktarmaTest(unittest.TestCase):
         kayitlar = X.satir_listesinden_oku(satirlar, X.CARI_ICE_AKTARMA)
         self.assertEqual(len(kayitlar), 2)
         self.assertEqual(kayitlar[0]["kod"], "C1")
+
+    def test_excel_bytes_ve_xls_reddi(self):
+        import tempfile
+        from dose import excel as X
+        with tempfile.TemporaryDirectory() as tmp:
+            yol = Path(tmp) / "cari.xlsx"
+            X.disa_aktar(yol, [("Cari", ["Cari kodu", "Unvan / adı soyadı", "Türü"],
+                               [["C9", "Bayt Ltd", "Tedarikçi"]])])
+            veri = yol.read_bytes()
+            kayitlar = X.tanim_oku(tablo="cari", veri=veri, ad="cari.xlsx")
+            self.assertEqual(kayitlar[0]["kod"], "C9")
+            with self.assertRaisesRegex(ValueError, r"\.xls"):
+                X.tanim_oku(tablo="cari", veri=b"fake", ad="eski.xls")
+
+    def test_pdf_bosluklu_metin_parcalama(self):
+        from dose import pdf_ice
+        self.assertEqual(pdf_ice._metin_satiri_parcala("Kod    Unvan    Tür"),
+                         ["Kod", "Unvan", "Tür"])
 
 
 def ft_secim(deger):

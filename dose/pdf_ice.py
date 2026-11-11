@@ -1,22 +1,49 @@
 """PDF tablolarından tanım satırı çıkarma (metin tabanlı PDF; tarama/OCR yok)."""
 from __future__ import annotations
 
+import re
+from io import BytesIO
 from pathlib import Path
 
 from . import excel as X
 
 
-def pdf_tablolari(yol: Path) -> list[list]:
-    """Tüm sayfalardaki tabloları satır listesine birleştirir."""
+def _pdf_ac(yol: Path | None = None, veri: bytes | None = None):
     try:
         import pdfplumber
     except ImportError as e:
         raise ValueError("PDF okumak için pdfplumber kurulmalı (pip install pdfplumber).") from e
+    if veri is not None:
+        if not veri:
+            raise ValueError("PDF dosyası boş.")
+        return pdfplumber.open(BytesIO(veri))
+    if yol is None:
+        raise ValueError("PDF dosyası veya içeriği verilmedi.")
     yol = Path(yol)
     if not yol.is_file():
         raise ValueError("PDF dosyası bulunamadı.")
+    return pdfplumber.open(str(yol))
+
+
+def _metin_satiri_parcala(satir: str) -> list[str]:
+    satir = (satir or "").strip()
+    if not satir:
+        return []
+    if "\t" in satir:
+        return [p.strip() for p in satir.split("\t") if p.strip()]
+    if "|" in satir:
+        return [p.strip() for p in satir.split("|") if p.strip()]
+    # İki veya daha fazla boşlukla hizalanmış sütunlar
+    parcalar = [p.strip() for p in re.split(r"\s{2,}", satir) if p.strip()]
+    if len(parcalar) >= 2:
+        return parcalar
+    return []
+
+
+def pdf_tablolari(yol: Path | None = None, veri: bytes | None = None) -> list[list]:
+    """Tüm sayfalardaki tabloları satır listesine birleştirir."""
     satirlar: list[list] = []
-    with pdfplumber.open(str(yol)) as pdf:
+    with _pdf_ac(yol=yol, veri=veri) as pdf:
         if not pdf.pages:
             raise ValueError("PDF boş.")
         for sayfa in pdf.pages:
@@ -28,7 +55,7 @@ def pdf_tablolari(yol: Path) -> list[list]:
             if not tablolar:
                 metin = sayfa.extract_text() or ""
                 for satir in metin.splitlines():
-                    parcalar = [p.strip() for p in satir.split("\t") if p.strip()]
+                    parcalar = _metin_satiri_parcala(satir)
                     if len(parcalar) >= 2:
                         satirlar.append(parcalar)
     if not satirlar:
@@ -38,8 +65,13 @@ def pdf_tablolari(yol: Path) -> list[list]:
     return satirlar
 
 
-def tanim_oku_pdf(yol: Path, tablo: str) -> list[dict]:
+def tanim_oku_pdf(yol: Path | None = None, tablo: str = "", veri: bytes | None = None) -> list[dict]:
     esler = X.TABLO_ICE_AKTARMA.get(tablo)
     if not esler:
         raise ValueError(f"Bu tablo için PDF içe aktarma yok: {tablo}")
-    return X.satir_listesinden_oku(pdf_tablolari(yol), esler)
+    kayitlar = X.satir_listesinden_oku(pdf_tablolari(yol=yol, veri=veri), esler)
+    if not kayitlar:
+        raise ValueError(
+            "PDF'de eşleşen satır bulunamadı. «Şablon» başlıklarını kullanın. "
+            f"Örnek: {X.beklenen_basliklar(tablo)}")
+    return kayitlar

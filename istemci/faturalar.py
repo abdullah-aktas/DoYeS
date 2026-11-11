@@ -67,6 +67,9 @@ class FaturaEkrani(Ekran):
         self.satis_satirlari: list[SatisSatiri] = []
         self.alis_satirlari: list[AlisSatiri] = []
         self.alim_isaretleri: dict[str, ft.Checkbox] = {}
+        self.alim_ihtiyac: ft.TextField | None = None
+        self.alim_yaklasik: ft.TextField | None = None
+        self.teklif_satirlari: list[dict] = []
         self.satir_sayaci = 0
         self.kirli = False
         self.uzak_uyari = False
@@ -142,6 +145,14 @@ class FaturaEkrani(Ekran):
             self.ust["belge_turu"] = secim_kutusu("Alış belge türü *", belgeler, "e-Fatura",
                                                   bos=False, on_select=self._degisti)
             self.alim_isaretleri: dict[str, ft.Checkbox] = {}
+            self.alim_ihtiyac = ft.TextField(
+                label="İhtiyaç / talep özeti *", min_lines=2, max_lines=4,
+                hint_text="Ne alınacak, neden gerekli (doğrudan temin)", on_change=self._degisti)
+            self.alim_yaklasik = ft.TextField(
+                label="Yaklaşık maliyet (KDV hariç, TL) *", hint_text="örn. 12500,00",
+                on_change=self._degisti)
+            self.teklif_satirlari = []
+            self._teklif_ekle()
             self._temin_degisti()
             self._alis_satiri_ekle()
         self.kirli = False
@@ -165,6 +176,35 @@ class FaturaEkrani(Ekran):
                 on_change=self._degisti)
             for b in liste
         }
+        if temin == "Doğrudan Temin" and not self.teklif_satirlari:
+            self._teklif_ekle()
+        self._degisti()
+        self._ciz()
+
+    def _teklif_ekle(self, _=None):
+        n = len(self.teklif_satirlari) + 1
+        self.teklif_satirlari.append({
+            "firma": ft.TextField(label=f"{n}. teklif firma / kişi *", on_change=self._degisti),
+            "tutar": ft.TextField(label=f"{n}. teklif tutarı (KDV hariç) *", on_change=self._degisti),
+            "secildi": ft.Checkbox(label="Seçildi", value=False, on_change=self._teklif_secildi),
+        })
+        self._degisti()
+        if self.ust is not None:
+            self._ciz()
+
+    def _teklif_secildi(self, e):
+        if e.control.value:
+            for t in self.teklif_satirlari:
+                if t["secildi"] is not e.control:
+                    t["secildi"].value = False
+        self._degisti()
+        self.guncelle()
+
+    def _teklif_sil(self, satir: dict):
+        if len(self.teklif_satirlari) <= 1:
+            self.app.bildir("En az bir teklif satırı kalmalı.", hata=True)
+            return
+        self.teklif_satirlari = [t for t in self.teklif_satirlari if t is not satir]
         self._degisti()
         self._ciz()
 
@@ -326,11 +366,21 @@ class FaturaEkrani(Ekran):
         if self.tur == "Alış":
             if not ust["temin_usulu"].value or not ust["gider_turu"].value or not ust["belge_turu"].value:
                 raise ValueError("Temin usulü, gider türü ve alış belge türü zorunludur.")
+            teklifler = []
+            for t in self.teklif_satirlari:
+                firma = (t["firma"].value or "").strip()
+                tutar = (t["tutar"].value or "").strip()
+                if firma or tutar or t["secildi"].value:
+                    teklifler.append({
+                        "firma": firma, "tutar": tutar, "secildi": bool(t["secildi"].value)})
             veri["alim"] = {
                 "temin_usulu": ust["temin_usulu"].value,
                 "gider_turu": ust["gider_turu"].value,
                 "belge_turu": ust["belge_turu"].value,
                 "belgeler": {k: bool(c.value) for k, c in self.alim_isaretleri.items()},
+                "ihtiyac_ozeti": (self.alim_ihtiyac.value or "").strip() if self.alim_ihtiyac else "",
+                "yaklasik_maliyet": (self.alim_yaklasik.value or "").strip() if self.alim_yaklasik else "",
+                "teklifler": teklifler,
             }
         return veri
 
@@ -468,10 +518,36 @@ class FaturaEkrani(Ekran):
                                self.ust["tevkifat"], self.ust["stopaj"]]
             form.append(ft.ResponsiveRow([ft.Container(k, col={"xs": 12, "md": 6}) for k in ust_alanlar]))
             if self.tur == "Alış" and self.alim_isaretleri:
+                limit = self.veri.get("dogrudan_temin_limit") or "340391"
+                form.append(uyari_seridi(
+                    f"Doğrudan temin limiti (KDV hariç): {para(limit)} TL. "
+                    f"Diğer idareler {para(self.veri.get('dogrudan_temin_limit_diger') or '340391')} · "
+                    f"Büyükşehir {para(self.veri.get('dogrudan_temin_limit_buyuksehir') or '1021827')}. "
+                    "Kurum kartındaki büyükşehir işareti hangi limitin uygulanacağını seçer. Limit aşımı kaydı engeller."))
+                temin = (self.ust.get("temin_usulu").value if self.ust else None) or ""
+                if temin == "Doğrudan Temin" and self.alim_ihtiyac and self.alim_yaklasik:
+                    self.alim_ihtiyac.disabled = self.islemde
+                    self.alim_yaklasik.disabled = self.islemde
+                    form.append(ft.Text("Doğrudan temin dosyası", weight=ft.FontWeight.BOLD))
+                    form.append(self.alim_ihtiyac)
+                    form.append(self.alim_yaklasik)
+                    form.append(ft.Text("Piyasa fiyat teklifleri (en az 1; önerilen 3)", weight=ft.FontWeight.BOLD))
+                    for t in self.teklif_satirlari:
+                        t["firma"].disabled = t["tutar"].disabled = t["secildi"].disabled = self.islemde
+                        form.append(ft.ResponsiveRow([
+                            ft.Container(t["firma"], col={"xs": 12, "md": 5}),
+                            ft.Container(t["tutar"], col={"xs": 12, "md": 4}),
+                            ft.Container(t["secildi"], col={"xs": 8, "md": 2}),
+                            ft.Container(ft.TextButton("Sil", disabled=self.islemde,
+                                                       on_click=lambda _, s=t: self._teklif_sil(s)),
+                                         col={"xs": 4, "md": 1}),
+                        ]))
+                    form.append(ft.TextButton("Teklif ekle", icon=ft.Icons.ADD, disabled=self.islemde,
+                                              on_click=self._teklif_ekle))
                 form.append(ft.Text("Alım belgesi kontrol listesi (zorunlular *)", weight=ft.FontWeight.BOLD))
                 form.append(ft.Text(
-                    "İşaretler, dosyanın fiziksel olarak dosyada bulunduğunu beyan eder. "
-                    "Doğrudan teminde yaklaşık maliyet KDV hariç limit kontrolü yapılır (2026: 340.391 TL)."))
+                    "İşaretler, belgenin fiziksel dosyada bulunduğunu beyan eder. "
+                    "Uygulama belge dosyası saklamaz; asıl evrakı klasörleyin.", size=12))
                 form.extend(self.alim_isaretleri.values())
             if self.tur == "Satış":
                 for s in self.satis_satirlari:

@@ -516,23 +516,27 @@ class TanimEkrani(Ekran):
     async def _ice_aktar_sec(self):
         self._picker_hazirla()
         dosyalar = await self._picker.pick_files(
-            dialog_title="Tanım dosyası seçin", allowed_extensions=["xlsx", "xls", "pdf"])
+            dialog_title="Tanım dosyası seçin (xlsx veya metin PDF)",
+            allowed_extensions=["xlsx", "xls", "pdf"], with_data=True)
         if not dosyalar:
             return
-        yol = dosyalar[0].path
-        if not yol:
-            raise ValueError("Dosya yolu alınamadı (web yüklemesinde destek sınırlı olabilir).")
-        await self._ice_aktar_isle(yol)
+        dosya = dosyalar[0]
+        await self._ice_aktar_isle(yol=dosya.path, veri=dosya.bytes, ad=dosya.name or "")
 
-    async def _ice_aktar_isle(self, yol: str):
+    async def _ice_aktar_isle(self, yol: str | None = None, veri: bytes | None = None, ad: str = ""):
         async def is_():
-            p = Path(yol)
-            if p.suffix.lower() == ".pdf":
-                kayitlar = pdf_ice.tanim_oku_pdf(p, self.tablo)
+            ad_kucuk = (ad or (Path(yol).name if yol else "")).lower()
+            if ad_kucuk.endswith(".xls") and not ad_kucuk.endswith(".xlsx"):
+                raise ValueError(
+                    "Eski .xls desteklenmez. Excel'de «Farklı Kaydet → *.xlsx» yapın veya Şablon indirin.")
+            if not yol and not veri:
+                raise ValueError("Dosya okunamadı. Masaüstünde yeniden deneyin veya .xlsx şablon kullanın.")
+            if ad_kucuk.endswith(".pdf") or (yol and Path(yol).suffix.lower() == ".pdf"):
+                kayitlar = pdf_ice.tanim_oku_pdf(
+                    yol=Path(yol) if yol else None, tablo=self.tablo, veri=veri)
             else:
-                kayitlar = X.tanim_oku(p, self.tablo)
-            if not kayitlar:
-                raise ValueError("Dosyada eşleşen satır bulunamadı. Şablon başlıklarını kontrol edin.")
+                kayitlar = X.tanim_oku(
+                    yol=Path(yol) if yol else None, tablo=self.tablo, veri=veri, ad=ad or None)
             self._ice_kayitlar = kayitlar
             self._ice_onizle_dialog(kayitlar)
 
@@ -544,6 +548,9 @@ class TanimEkrani(Ekran):
                             size=12) for i, r in enumerate(ornek)]
         if len(kayitlar) > 8:
             satirlar.append(ft.Text(f"… ve {len(kayitlar) - 8} satır daha", size=12, color=METIN_IKINCIL))
+        satirlar.insert(0, ft.Text(
+            "Önizlemeyi kontrol edin. Hatalı satırlar aktarım sonunda ayrı listelenir.",
+            size=12, color=METIN_IKINCIL))
 
         async def kaydet(_):
             self.app.page.pop_dialog()
@@ -555,13 +562,24 @@ class TanimEkrani(Ekran):
             actions=[ft.TextButton("Vazgeç", on_click=lambda _: self.app.page.pop_dialog()),
                      ft.FilledButton("İçe aktar", icon=ft.Icons.SAVE, on_click=kaydet)]))
 
+    def _ice_hata_dialog(self, ozet: str, hatalar: list[str]):
+        satirlar = [ft.Text(ozet, weight=ft.FontWeight.BOLD)]
+        satirlar += [ft.Text(h, size=12, color="#b3261e") for h in hatalar[:25]]
+        if len(hatalar) > 25:
+            satirlar.append(ft.Text(f"… ve {len(hatalar) - 25} hata daha", size=12, color=METIN_IKINCIL))
+        self.app.page.show_dialog(ft.AlertDialog(
+            modal=True, title=ft.Text("İçe aktarma sonucu"),
+            content=ft.Column(satirlar, tight=True, scroll=ft.ScrollMode.AUTO, height=320, width=520),
+            actions=[ft.TextButton("Tamam", on_click=lambda _: self.app.page.pop_dialog())]))
+
     async def _ice_toplu_kaydet(self):
         async def is_():
-            eklenen = guncellenen = hatali = 0
+            eklenen = guncellenen = 0
+            hatalar: list[str] = []
             anahtar = {"personel": "tckn", "ogrenci": "tckn", "cari": "kod",
                        "malzeme": "kod", "urun": "kod", "bolum": "kod"}.get(self.tablo)
             yedek_anahtar = {"cari": "unvan", "malzeme": "ad", "urun": "ad", "bolum": "ad"}.get(self.tablo)
-            for ham in self._ice_kayitlar:
+            for no, ham in enumerate(self._ice_kayitlar, 1):
                 try:
                     veri = self._ice_satir_verisi(ham)
                     mevcut = None
@@ -578,11 +596,18 @@ class TanimEkrani(Ekran):
                     else:
                         await self.app.supa.ekle(self.tablo, veri)
                         eklenen += 1
-                except (SupaHata, ValueError, KeyError):
-                    hatali += 1
+                except SupaHata as e:
+                    hatalar.append(f"Satır {no}: {e.mesaj}")
+                except (ValueError, KeyError, TypeError) as e:
+                    hatalar.append(f"Satır {no}: {e}")
             await self.yukle()
-            self.app.bildir(f"İçe aktarma: {eklenen} yeni, {guncellenen} güncellendi"
-                            + (f", {hatali} hatalı" if hatali else ""))
+            ozet = f"İçe aktarma: {eklenen} yeni, {guncellenen} güncellendi"
+            if hatalar:
+                ozet += f", {len(hatalar)} hatalı"
+                self.app.bildir(ozet, hata=True)
+                self._ice_hata_dialog(ozet, hatalar)
+            else:
+                self.app.bildir(ozet)
 
         await self.app.guvenli(is_)
 
