@@ -60,8 +60,8 @@ def pdf_tablolari(yol: Path | None = None, veri: bytes | None = None) -> list[li
                         satirlar.append(parcalar)
     if not satirlar:
         raise ValueError(
-            "PDF'de tablo bulunamadı. Tarama (görüntü) PDF desteklenmez; Excel şablonu kullanın "
-            "veya metin seçilebilir tablo içeren PDF yükleyin.")
+            "PDF'de tablo bulunamadı. Tarama (görüntü) PDF için sayfayı PNG/JPG olarak kaydedip "
+            "yükleyin, «Metin / sesle yaz» kullanın veya metin seçilebilir tablo / Excel şablonu yükleyin.")
     return satirlar
 
 

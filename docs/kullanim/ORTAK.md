@@ -38,10 +38,12 @@ Tanımlar menüsünde (bölüm, personel, öğrenci, cari, malzeme, ürün) yazm
 
 1. **Şablon** → boş `.xlsx` indirilir (`Belgelerim\DÖSE Belgeler` veya platform belgeler klasörü).
 2. Başlık satırlarını değiştirmeden satır ekleyin (veya başlık eşleşen mevcut listenizi kullanın).
-3. **Excel/PDF yükle** → önizleme → **İçe aktar**.
+3. **Dosya / resim yükle** (xlsx, metin PDF, PNG/JPG) veya **Metin / sesle yaz** → önizleme → **İçe aktar**.
 4. Eşleştirme: personel/öğrenci **TCKN**; cari **kod** veya **unvan**; malzeme/ürün/bölüm **kod** veya **ad**.
 
-PDF: metin tabanlı tablo. Tarama PDF ve fatura OCR yoktur.
+PDF: metin tabanlı tablo tercih edilir. Tarama / belge resmi için cihazda **Tesseract OCR** varsa otomatik okunur; yoksa metni yapıştırın veya Win+H / Mikrofon ile dikte edin. Fatura formunda **Belge resmi oku** / **Belge metni / ses** belge no ve tarihi doldurur.
+
+Güncelleme duyurusunu **Tamam** veya şeritteki kapatma ile işaretlerseniz aynı sürüm duyurusu bir daha çıkmaz.
 
 ## Yazdırma ve belgeler
 

@@ -225,10 +225,22 @@ class Uygulama:
         self._guncelleme_kontrol()
 
     def _guncelleme_kontrol(self):
-        """Sunucudaki duyuru / daha yeni sürüm varsa oturumda bir kez bildir."""
+        """Sunucudaki duyuru / daha yeni sürüm varsa, kapatılmamışsa bir kez bildir."""
         if self._guncelleme_gosterildi:
             return
+        self.page.run_task(self._guncelleme_kontrol_async)
+
+    async def _guncelleme_kontrol_async(self):
+        if self._guncelleme_gosterildi:
+            return
+        try:
+            from . import medya
+        except ImportError:
+            import medya
         uyg = (self.ben or {}).get("uygulama") or {}
+        if await medya.duyuru_okundu_mu(self.page, uyg):
+            self._guncelleme_gosterildi = True
+            return
         uzak = uyg.get("surum") or ""
         duyuru = (uyg.get("duyuru") or "").strip()
         aktif = bool(uyg.get("aktif")) and bool(duyuru)
@@ -241,7 +253,21 @@ class Uygulama:
         if eski:
             govde = f"Bu cihaz {SUR.SURUM} sürümünde; önerilen {uzak}.\n\n{govde}"
         url = uyg.get("indir_url") or uyg.get("windows_url") or ""
-        aksiyonlar = [ft.TextButton("Tamam", on_click=lambda _: self.page.pop_dialog())]
+
+        async def tamam_ve_kapat(_=None):
+            await medya.duyuru_okundu_isaretle(self.page, uyg)
+            self.page.pop_dialog()
+            if isinstance(self.ekran, object) and hasattr(self.ekran, "_duyuru_gizli"):
+                self.ekran._duyuru_gizli = True
+                if hasattr(self.ekran, "gorevler"):
+                    self.ekran.gorevler = [
+                        g for g in (self.ekran.gorevler or []) if (g.get("tur") or "") != "guncelleme"]
+                if hasattr(self.ekran, "_ciz"):
+                    self.ekran._ciz()
+
+        aksiyonlar = [
+            ft.TextButton("Tamam", on_click=lambda _: self.page.run_task(tamam_ve_kapat)),
+        ]
         if url:
             async def indir(_, u=url):
                 try:

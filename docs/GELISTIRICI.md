@@ -13,7 +13,7 @@ Okuyun → ortamı kurun → küçük bir değişiklikle test edin → migration
 - **Sunucu:** Tek Supabase projesi, çok okul (`okul_id` + RLS). İş kuralları SQL tetikleyici ve `SECURITY DEFINER` RPC’lerde.
 - **Sır yok istemcide:** Yalnız anon/publishable anahtar. `service_role` asla istemciye veya sohbete konmaz.
 
-Kapsam dışı (bilinçli): GİB e-Fatura gönderimi, banka EFT API’si, tarama-PDF OCR.
+Kapsam dışı (bilinçli): GİB e-Fatura gönderimi, banka EFT API’si. Belge resmi OCR için isteğe bağlı Tesseract; yoksa metin/ses yolu kullanılır.
 
 ---
 
@@ -181,7 +181,7 @@ python -m pytest tests/test_istemci.py::ExcelIceAktarmaTest -q
 | «yetkiniz yok» / boş PATCH | RLS veya rol; RPC mi tablo mu |
 | Sürüm çakışması | Başka oturum kaydetti; yenile |
 | «Veritabanı kurulumu tamamlanmamış» | Eksik migration / `db push` |
-| PDF içe aktarma boş | Tarama PDF; `dose/pdf_ice.py` uyarısı |
+| PDF içe aktarma boş | Tarama PDF → PNG/JPG veya metin/ses; `dose/gorsel_ice.py` |
 | Para yuvarlama | Sunucu NUMERIC vs istemci `Decimal` |
 
 Canlı log: Supabase Dashboard → Logs (API / Postgres).

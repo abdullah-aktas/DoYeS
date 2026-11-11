@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 from typing import TypedDict
 from uuid import uuid4
 
@@ -78,6 +79,8 @@ class FaturaEkrani(Ekran):
         self.hazir: dict | None = None
         self.istek_id = ""
         self.islemde = False
+        self._picker: ft.FilePicker | None = None
+        self._kapatilan_uyarilar: set[str] = set()
 
     @property
     def yazabilir(self) -> bool:
@@ -161,7 +164,91 @@ class FaturaEkrani(Ekran):
         self.onizleme = None
         self.hazir = None
         self.istek_id = str(uuid4())
+        self._kapatilan_uyarilar = set()
         self._ciz()
+
+    def _uyari_kapat(self, metin: str, _=None):
+        self._kapatilan_uyarilar.add(metin)
+        self._ciz()
+
+    def _picker_hazirla(self):
+        if self._picker is None:
+            self._picker = ft.FilePicker()
+            self.app.page.services.append(self._picker)
+            self.app.page.update()
+
+    def _belge_medya_doldur(self, metin: str):
+        from dose import gorsel_ice
+        alanlar = gorsel_ice.fatura_alanlari_cikar(metin)
+        if not alanlar:
+            raise ValueError(
+                "Belge no / tarih okunamadı. Metni düzenleyip yeniden deneyin veya alanları elle girin.")
+        if self.ust is None:
+            return
+        if alanlar.get("belge_no"):
+            self.ust["belge_no"].value = alanlar["belge_no"]
+        if alanlar.get("tarih"):
+            self.ust["tarih"].value = alanlar["tarih"]
+        self._degisti()
+        self._ciz()
+        ozet = ", ".join(f"{k}={v}" for k, v in alanlar.items())
+        self.app.bildir(f"Belgeden dolduruldu: {ozet}")
+
+    def _belge_resim_ac(self, _=None):
+        self.app.page.run_task(self._belge_resim_sec)
+
+    async def _belge_resim_sec(self):
+        self._picker_hazirla()
+        dosyalar = await self._picker.pick_files(
+            dialog_title="Fatura / fiş görüntüsü veya PDF seçin",
+            allowed_extensions=["png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp", "pdf"],
+            with_data=True)
+        if not dosyalar:
+            return
+        dosya = dosyalar[0]
+
+        async def is_():
+            from dose import gorsel_ice
+            ad = (dosya.name or "").lower()
+            veri = dosya.bytes
+            yol = Path(dosya.path) if dosya.path else None
+            if ad.endswith(".pdf") or (yol and yol.suffix.lower() == ".pdf"):
+                # Metin PDF dene; olmazsa OCR yok — kullanıcıya görüntü öner
+                try:
+                    import pdfplumber
+                    from io import BytesIO
+                    kaynak = BytesIO(veri) if veri is not None else str(yol)
+                    with pdfplumber.open(kaynak) as pdf:
+                        metin = "\n".join((s.extract_text() or "") for s in pdf.pages)
+                except Exception as e:
+                    raise ValueError(f"PDF okunamadı: {e}") from e
+                if not (metin or "").strip():
+                    raise ValueError(
+                        "PDF’de seçilebilir metin yok (tarama). Sayfayı PNG/JPG kaydedip yükleyin "
+                        "veya «Belge metni / ses» kullanın.")
+            else:
+                metin = gorsel_ice.metin_cikar(yol=yol, veri=veri, ad=ad)
+            self._belge_medya_doldur(metin)
+
+        await self.app.guvenli(is_)
+
+    def _belge_metin_ac(self, _=None):
+        try:
+            from . import medya
+        except ImportError:
+            import medya
+
+        async def tamam(metin: str):
+            async def is_():
+                self._belge_medya_doldur(metin)
+
+            await self.app.guvenli(is_)
+
+        medya.ses_veya_metin_dialog(
+            self.app,
+            baslik="Fatura metni / sesle yaz",
+            ipucu="Belge no ve tarihi içeren metni yapıştırın veya dikte edin (Win+H / Mikrofon).",
+            on_tamam=tamam)
 
     def _temin_degisti(self, _=None):
         if self.ust is None or "temin_usulu" not in self.ust:
@@ -517,13 +604,23 @@ class FaturaEkrani(Ekran):
                                self.ust["temin_usulu"], self.ust["gider_turu"], self.ust["belge_turu"],
                                self.ust["tevkifat"], self.ust["stopaj"]]
             form.append(ft.ResponsiveRow([ft.Container(k, col={"xs": 12, "md": 6}) for k in ust_alanlar]))
+            form.append(ft.Row([
+                ft.OutlinedButton("Belge resmi oku", icon=ft.Icons.IMAGE_SEARCH,
+                                  disabled=self.islemde, on_click=self._belge_resim_ac),
+                ft.OutlinedButton("Belge metni / ses", icon=ft.Icons.MIC,
+                                  disabled=self.islemde, on_click=self._belge_metin_ac),
+            ], wrap=True))
             if self.tur == "Alış" and self.alim_isaretleri:
                 limit = self.veri.get("dogrudan_temin_limit") or "340391"
-                form.append(uyari_seridi(
+                limit_uyari = (
                     f"Doğrudan temin limiti (KDV hariç): {para(limit)} TL. "
                     f"Diğer idareler {para(self.veri.get('dogrudan_temin_limit_diger') or '340391')} · "
                     f"Büyükşehir {para(self.veri.get('dogrudan_temin_limit_buyuksehir') or '1021827')}. "
-                    "Kurum kartındaki büyükşehir işareti hangi limitin uygulanacağını seçer. Limit aşımı kaydı engeller."))
+                    "Kurum kartındaki büyükşehir işareti hangi limitin uygulanacağını seçer. Limit aşımı kaydı engeller.")
+                if limit_uyari not in self._kapatilan_uyarilar:
+                    form.append(uyari_seridi(
+                        limit_uyari,
+                        on_kapat=lambda _, m=limit_uyari: self._uyari_kapat(m)))
                 temin = (self.ust.get("temin_usulu").value if self.ust else None) or ""
                 if temin == "Doğrudan Temin" and self.alim_ihtiyac and self.alim_yaklasik:
                     self.alim_ihtiyac.disabled = self.islemde
@@ -586,7 +683,11 @@ class FaturaEkrani(Ekran):
                                         f"Stopaj hesabı: {detay['stopaj_hesabi'] or '—'}"))
                 alim = self.onizleme.get("alim") or {}
                 for u in alim.get("uyarilar") or []:
-                    form.append(uyari_seridi(u))
+                    if u in self._kapatilan_uyarilar:
+                        continue
+                    form.append(uyari_seridi(
+                        u, on_kapat=lambda _, m=u: self._uyari_kapat(m),
+                        kapat_ipucu="Anladım — bir daha gösterme"))
                 kaydet = ft.FilledButton("Faturayı kaydet", icon=ft.Icons.SAVE, disabled=self.islemde)
                 kaydet.on_click = lambda _: self.app.page.run_task(self._kaydet, kaydet)
                 islemler.insert(1, kaydet)

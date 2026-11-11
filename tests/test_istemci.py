@@ -173,10 +173,10 @@ class DonusumTest(unittest.TestCase):
 class SurumTest(unittest.TestCase):
     def test_surum_karsilastirma(self):
         from istemci import surum as S
-        self.assertEqual(S.SURUM, "1.8.0")
-        self.assertTrue(S.surum_eski("1.7.6", "1.8.0"))
-        self.assertFalse(S.surum_eski("1.8.0", "1.8.0"))
-        self.assertFalse(S.surum_eski("1.9.0", "1.8.0"))
+        self.assertEqual(S.SURUM, "1.8.1")
+        self.assertTrue(S.surum_eski("1.7.6", "1.8.1"))
+        self.assertFalse(S.surum_eski("1.8.1", "1.8.1"))
+        self.assertFalse(S.surum_eski("1.9.0", "1.8.1"))
 
 
 class SecenekTohumTest(unittest.TestCase):
@@ -270,7 +270,7 @@ BEN = {"uye": True, "rol": "Okul Müdürü", "ad_soyad": "Ali Veli", "eposta": "
        "yetkiler": {"kurum": "y", "bolum": "y", "personel": "y", "ogrenci": "g", "cari": "g", "malzeme": "g",
                     "urun": "g", "siparis": "y", "kullanici": "y", "islem_kaydi": "g", "resmi_yazi": "y"},
        "okul": {"id": 1, "ad": "Derik MTAL", "kurum_kodu": "123456", "lisans_bitis": None, "salt_okunur": False},
-       "uygulama": {"surum": "1.8.0", "min_surum": "1.7.0", "duyuru": "", "aktif": False}}
+       "uygulama": {"surum": "1.8.1", "min_surum": "1.7.0", "duyuru": "", "aktif": False}}
 
 
 class ArayuzTest(unittest.TestCase):
@@ -1524,11 +1524,14 @@ class YeniEkranModulleriTest(unittest.TestCase):
         from istemci.ekranlar import TanimEkrani
         kaynak = inspect.getsource(TanimEkrani)
         self.assertIn("Şablon", kaynak)
-        self.assertIn("Excel/PDF yükle", kaynak)
+        self.assertIn("Dosya / resim yükle", kaynak)
+        self.assertIn("Metin / sesle yaz", kaynak)
         self.assertIn("_ice_aktar_sec", kaynak)
+        self.assertIn("_ice_metin_ac", kaynak)
         self.assertIn("pick_files", kaynak)
         self.assertIn("FilePicker", kaynak)
         self.assertIn("TABLO_ICE_AKTARMA", kaynak)
+        self.assertIn("gorsel_ice", kaynak)
 
 
 class ExcelIceAktarmaTest(unittest.TestCase):
@@ -1601,6 +1604,25 @@ class ExcelIceAktarmaTest(unittest.TestCase):
         from dose import pdf_ice
         self.assertEqual(pdf_ice._metin_satiri_parcala("Kod    Unvan    Tür"),
                          ["Kod", "Unvan", "Tür"])
+
+    def test_gorsel_metin_ve_fatura_alanlari(self):
+        from dose import gorsel_ice
+        metin = "Cari kodu    Unvan / adı soyadı    Türü\nC10    Deneme A.Ş.    Tedarikçi\n"
+        kayitlar = gorsel_ice.tanim_oku_metin(metin, "cari")
+        self.assertEqual(kayitlar[0]["kod"], "C10")
+        alan = gorsel_ice.fatura_alanlari_cikar(
+            "e-Fatura No: ABC2026000001\nTarih: 11.11.2026\nÖdenecek Tutar: 1.250,00")
+        self.assertEqual(alan.get("belge_no"), "ABC2026000001")
+        self.assertEqual(alan.get("tarih"), "11.11.2026")
+        self.assertIn("tutar", alan)
+
+    def test_duyuru_anahtar_ve_uyari_seridi_kapat(self):
+        from istemci import medya
+        from istemci.ekranlar import uyari_seridi
+        self.assertEqual(medya.duyuru_anahtar({"surum": "1.8.1", "duyuru": "Merhaba"}),
+                         "1.8.1|Merhaba")
+        k = uyari_seridi("deneme", on_kapat=lambda _: None)
+        self.assertIsNotNone(k)
 
 
 def ft_secim(deger):

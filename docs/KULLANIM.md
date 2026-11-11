@@ -30,11 +30,10 @@ okulda sunucu kurulmaz. Bu sayfa tüm kullanıcılar için giriş noktasıdır.
 
 ## Tanım listeleri
 
-- Bölüm, personel, öğrenci, cari, malzeme, ürün ekranlarında **Şablon** ve **Excel/PDF yükle** ile toplu içe aktarma vardır.
+- Bölüm, personel, öğrenci, cari, malzeme, ürün ekranlarında **Şablon**, **Dosya / resim yükle** ve **Metin / sesle yaz** ile toplu içe aktarma vardır.
 - Adımlar: [kullanim/ORTAK.md](kullanim/ORTAK.md#tanım-içe-aktarma-excel--pdf) · Memur notu: [kullanim/MEMUR.md](kullanim/MEMUR.md)
 
 ## Bu sürümde yoktur
 
 - GİB’e e-Fatura / e-Arşiv **gönderimi** (yerel kayıt ve çıktı vardır)
 - Gerçek banka EFT/havale API’si (kasa ekranı gerçekleşmiş hareketi kaydeder)
-- Tarama PDF / fatura OCR (yalnız metin tablolu PDF tanım içe aktarma)

@@ -16,9 +16,9 @@ Platform: [PLATFORM.md](PLATFORM.md) · Ortak: [ORTAK.md](ORTAK.md)
 Yazma yetkiniz olan tanım ekranlarında (**bölüm, personel, öğrenci, cari, malzeme, ürün**):
 
 1. **Şablon** ile boş Excel indirin; başlık satırını bozmadan doldurun.
-2. **Excel/PDF yükle** ile dosyayı seçin; önizlemede satırları kontrol edin.
+2. **Dosya / resim yükle** (xlsx, PDF, PNG/JPG) veya **Metin / sesle yaz** ile içeriği verin; önizlemede satırları kontrol edin.
 3. **İçe aktar** ile kaydedin. Aynı TCKN / kod / unvan varsa güncellenir, yoksa eklenir.
-4. PDF yalnız **metin seçilebilir tablolar** içindir; tarama (görüntü) PDF desteklenmez — Excel kullanın.
+4. PDF’de metin seçilemiyorsa sayfayı resim olarak yükleyin (Tesseract varsa OCR) veya dikte / yapıştırma kullanın.
 
 Ayrıntı: [ORTAK.md](ORTAK.md#tanım-içe-aktarma-excel--pdf).
 

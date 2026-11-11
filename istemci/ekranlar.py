@@ -102,10 +102,14 @@ def son_degisiklik(kayit: dict | None) -> ft.Control:
                    color=ft.Colors.ON_SURFACE_VARIANT)
 
 
-def uyari_seridi(metin: str) -> ft.Control:
-    return ft.Container(ft.Row([ft.Icon(ft.Icons.WARNING_AMBER, color=ft.Colors.ON_ERROR_CONTAINER),
-                                ft.Text(metin, color=ft.Colors.ON_ERROR_CONTAINER, expand=True)]),
-                        bgcolor=ft.Colors.ERROR_CONTAINER, padding=10, border_radius=8)
+def uyari_seridi(metin: str, on_kapat=None, kapat_ipucu: str = "Bir daha gösterme") -> ft.Control:
+    satir = [ft.Icon(ft.Icons.WARNING_AMBER, color=ft.Colors.ON_ERROR_CONTAINER),
+             ft.Text(metin, color=ft.Colors.ON_ERROR_CONTAINER, expand=True)]
+    if on_kapat is not None:
+        satir.append(ft.IconButton(
+            ft.Icons.CLOSE, icon_color=ft.Colors.ON_ERROR_CONTAINER, tooltip=kapat_ipucu,
+            on_click=on_kapat))
+    return ft.Container(ft.Row(satir), bgcolor=ft.Colors.ERROR_CONTAINER, padding=10, border_radius=8)
 
 
 class Ekran:
@@ -161,6 +165,7 @@ class AnaEkran(Ekran):
         super().__init__(app)
         self.ozet: dict = {}
         self.gorevler: list = []
+        self._duyuru_gizli = False
 
     @staticmethod
     def _para(deger) -> str:
@@ -189,12 +194,36 @@ class AnaEkran(Ekran):
             gorev = await self.app.supa.rpc("dose_gorevlerim")
         except SupaHata:
             gorev = {"gorevler": []}
-        self.gorevler = gorev.get("gorevler") or []
+        try:
+            from . import medya
+        except ImportError:
+            import medya
+        uyg = (self.app.ben or {}).get("uygulama") or {}
+        self._duyuru_gizli = await medya.duyuru_okundu_mu(self.app.page, uyg)
+        ham = gorev.get("gorevler") or []
+        if self._duyuru_gizli:
+            ham = [g for g in ham if (g.get("tur") or "") != "guncelleme"]
+        self.gorevler = ham
         self._ciz()
 
     def duzen(self):
         if self.app.ben and (self.app.ben.get("okul") or self.app.ben.get("merkez_mevzuat")):
             self._ciz()
+
+    def _duyuru_kapat(self, _=None):
+        async def is_():
+            try:
+                from . import medya
+            except ImportError:
+                import medya
+            uyg = (self.app.ben or {}).get("uygulama") or {}
+            await medya.duyuru_okundu_isaretle(self.app.page, uyg)
+            self._duyuru_gizli = True
+            self.gorevler = [g for g in self.gorevler if (g.get("tur") or "") != "guncelleme"]
+            self._ciz()
+            self.app.bildir("Güncelleme uyarısı kapatıldı; bu sürüm için bir daha gösterilmez.")
+
+        self.app.page.run_task(self.app.guvenli, is_)
 
     def _ciz(self):
         ben = self.app.ben or {}
@@ -211,9 +240,10 @@ class AnaEkran(Ekran):
             c.append(uyari_seridi("Lisans süresi doldu. Kayıtları görebilirsiniz ama değiştiremezsiniz. "
                                   "Lisansı yenilemek için satıcınıza başvurun."))
         uyg = ben.get("uygulama") or {}
-        if uyg.get("aktif") and (uyg.get("duyuru") or "").strip():
+        if (not self._duyuru_gizli) and uyg.get("aktif") and (uyg.get("duyuru") or "").strip():
             c.append(uyari_seridi(
-                f"Güncelleme {uyg.get('surum') or ''}: {(uyg.get('duyuru') or '').strip()}"))
+                f"Güncelleme {uyg.get('surum') or ''}: {(uyg.get('duyuru') or '').strip()}",
+                on_kapat=self._duyuru_kapat))
 
         kpis: list[ft.Control] = [
             kpi_karti("Bekleyen görev", str(len(self.gorevler)), ft.Icons.TASK_ALT, MARKA_VURGU)]
@@ -437,7 +467,8 @@ class TanimEkrani(Ekran):
         if self.yazabilir and self.tablo in X.TABLO_ICE_AKTARMA:
             aksiyonlar += [
                 ft.OutlinedButton("Şablon", icon=ft.Icons.TABLE_VIEW, on_click=self._sablon_indir),
-                ft.OutlinedButton("Excel/PDF yükle", icon=ft.Icons.UPLOAD_FILE, on_click=self._ice_aktar_ac),
+                ft.OutlinedButton("Dosya / resim yükle", icon=ft.Icons.UPLOAD_FILE, on_click=self._ice_aktar_ac),
+                ft.OutlinedButton("Metin / sesle yaz", icon=ft.Icons.MIC, on_click=self._ice_metin_ac),
             ]
         if self.yazabilir:
             aksiyonlar.append(ft.FilledButton("Yeni", icon=ft.Icons.ADD, on_click=self._yeni))
@@ -513,11 +544,33 @@ class TanimEkrani(Ekran):
     def _ice_aktar_ac(self, _=None):
         self.app.page.run_task(self._ice_aktar_sec)
 
+    def _ice_metin_ac(self, _=None):
+        try:
+            from . import medya
+        except ImportError:
+            import medya
+
+        async def tamam(metin: str):
+            async def is_():
+                from dose import gorsel_ice
+                kayitlar = gorsel_ice.tanim_oku_metin(metin, self.tablo)
+                self._ice_kayitlar = kayitlar
+                self._ice_onizle_dialog(kayitlar)
+
+            await self.app.guvenli(is_)
+
+        medya.ses_veya_metin_dialog(
+            self.app,
+            baslik="Tanım satırlarını yazın / dikte edin",
+            ipucu="İlk satır başlıklar (Şablon ile aynı). Sonra veri satırları. Win+H veya Mikrofon.",
+            on_tamam=tamam)
+
     async def _ice_aktar_sec(self):
         self._picker_hazirla()
         dosyalar = await self._picker.pick_files(
-            dialog_title="Tanım dosyası seçin (xlsx veya metin PDF)",
-            allowed_extensions=["xlsx", "xls", "pdf"], with_data=True)
+            dialog_title="Tanım dosyası seçin (xlsx, PDF veya belge resmi)",
+            allowed_extensions=["xlsx", "xls", "pdf", "png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp"],
+            with_data=True)
         if not dosyalar:
             return
         dosya = dosyalar[0]
@@ -525,15 +578,25 @@ class TanimEkrani(Ekran):
 
     async def _ice_aktar_isle(self, yol: str | None = None, veri: bytes | None = None, ad: str = ""):
         async def is_():
+            from dose import gorsel_ice
             ad_kucuk = (ad or (Path(yol).name if yol else "")).lower()
             if ad_kucuk.endswith(".xls") and not ad_kucuk.endswith(".xlsx"):
                 raise ValueError(
                     "Eski .xls desteklenmez. Excel'de «Farklı Kaydet → *.xlsx» yapın veya Şablon indirin.")
             if not yol and not veri:
                 raise ValueError("Dosya okunamadı. Masaüstünde yeniden deneyin veya .xlsx şablon kullanın.")
-            if ad_kucuk.endswith(".pdf") or (yol and Path(yol).suffix.lower() == ".pdf"):
-                kayitlar = pdf_ice.tanim_oku_pdf(
-                    yol=Path(yol) if yol else None, tablo=self.tablo, veri=veri)
+            if gorsel_ice.gorsel_mi(ad=ad_kucuk, yol=Path(yol) if yol else None):
+                kayitlar = gorsel_ice.tanim_oku_gorsel(
+                    yol=Path(yol) if yol else None, tablo=self.tablo, veri=veri, ad=ad)
+            elif ad_kucuk.endswith(".pdf") or (yol and Path(yol).suffix.lower() == ".pdf"):
+                try:
+                    kayitlar = pdf_ice.tanim_oku_pdf(
+                        yol=Path(yol) if yol else None, tablo=self.tablo, veri=veri)
+                except ValueError as e:
+                    # Tarama PDF: kullanıcıya metin/ses veya resim yolu öner
+                    raise ValueError(
+                        f"{e} Tarama ise sayfayı PNG/JPG olarak kaydedip yükleyin "
+                        "veya «Metin / sesle yaz» kullanın.") from e
             else:
                 kayitlar = X.tanim_oku(
                     yol=Path(yol) if yol else None, tablo=self.tablo, veri=veri, ad=ad or None)
