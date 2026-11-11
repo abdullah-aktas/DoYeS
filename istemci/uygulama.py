@@ -111,6 +111,7 @@ class Uygulama:
         self.menu_kutu: ft.Container | None = None
         self._dongu: asyncio.Task | None = None
         self._guncelleme_gosterildi = False
+        self._cekmece_hedefler: list[str] = []
 
     # ------------------------------------------------------------------ helpers
     @property
@@ -576,6 +577,55 @@ class Uygulama:
         return ft.Container(ft.Row([cubuk], scroll=ft.ScrollMode.AUTO, spacing=0),
                             bgcolor=ANA_RENK, padding=ft.Padding.symmetric(horizontal=4, vertical=2))
 
+    def _mobil_cekmece(self) -> ft.NavigationDrawer:
+        """Dar ekran menüsü: hamburger ile açılır."""
+        gorunur = {s[0]: s for s in self.gorunur_sayfalar()}
+        hedefler: list[str] = []
+        kontroller: list[ft.Control] = [
+            ft.Container(ft.Text("DÖSE menü", weight=ft.FontWeight.BOLD, color=ANA_RENK, size=16),
+                         padding=ft.Padding.only(left=16, top=16, bottom=8)),
+        ]
+
+        def ekle(anahtar: str):
+            if anahtar not in gorunur:
+                return
+            a, etiket, ikon, _ = gorunur[anahtar]
+            hedefler.append(a)
+            kontroller.append(ft.NavigationDrawerDestination(
+                label=etiket, icon=ikon,
+                selected_icon=ikon))
+
+        ekle("ana")
+        for grup, _grup_ikonu, anahtarlar in MENU_GRUPLARI:
+            sayfalar = [a for a in anahtarlar if a in gorunur]
+            if not sayfalar:
+                continue
+            kontroller.append(ft.Divider(thickness=1))
+            kontroller.append(ft.Container(
+                ft.Text(grup, size=12, weight=ft.FontWeight.BOLD, color=METIN_IKINCIL),
+                padding=ft.Padding.only(left=16, top=8, bottom=4)))
+            for a in sayfalar:
+                ekle(a)
+
+        self._cekmece_hedefler = hedefler
+
+        async def secildi(e):
+            idx = e.control.selected_index
+            if idx is None or idx < 0 or idx >= len(self._cekmece_hedefler):
+                return
+            anahtar = self._cekmece_hedefler[idx]
+            try:
+                await self.page.close_drawer()
+            except Exception:
+                pass
+            await self.sayfa_ac(anahtar)
+
+        secili = 0
+        if self.sayfa in hedefler:
+            secili = hedefler.index(self.sayfa)
+        return ft.NavigationDrawer(
+            controls=kontroller, selected_index=secili, on_change=secildi)
+
     @staticmethod
     def _lisans_rozeti(okul: dict) -> ft.Control:
         """Trial countdown or read-only warning next to the user name; hidden for a valid paid license."""
@@ -602,39 +652,78 @@ class Uygulama:
                     color=METIN),
             ft.Text(self.ben.get("rol") or "", size=11, color=METIN_IKINCIL)],
             spacing=0, horizontal_alignment=ft.CrossAxisAlignment.END, visible=self.genis)
-        baslik_satiri = ft.Container(ft.Row([
-            logo(120, 44) if self.genis else uygulama_ikonu(36),
-            ft.Column([ft.Text("DÖSE Yönetim", size=18 if self.genis else 15, weight=ft.FontWeight.BOLD,
-                               color=METIN),
-                       ft.Text((f"{okul['ad']} · " if okul.get("ad") else "") + f"v{SUR.SURUM}",
-                               size=12, color=METIN_IKINCIL,
-                               max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)], spacing=0, expand=True),
-            kullanici,
-            self._lisans_rozeti(okul),
-            ft.Icon(ft.Icons.ACCOUNT_CIRCLE, color=ANA_RENK, size=30, visible=self.genis),
-            cikis,
-        ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=ft.Padding.symmetric(horizontal=16, vertical=10), bgcolor=YUZEY,
-            border=ft.Border.only(bottom=ft.BorderSide(1, KENAR)))
-        self.menu_kutu = ft.Container(self._menu_cubugu(), bgcolor=ANA_RENK)
+        self.govde.padding = ft.Padding.symmetric(
+            horizontal=16 if self.genis else 10, vertical=12 if self.genis else 8)
         self.sayfa_ikonu = ft.Icon(ft.Icons.HOME, color=ANA_RENK)
         self.sayfa_basligi = ft.Text(SAYFA_ADI.get(self.sayfa, "DÖSE"), size=18, weight=ft.FontWeight.BOLD,
                                      color=METIN)
-        sayfa_satiri = ft.Container(ft.Row([self.sayfa_ikonu, self.sayfa_basligi], spacing=10),
-                                    padding=ft.Padding.only(left=20, right=16, top=12, bottom=0), bgcolor=ZEMIN)
-        self.page.appbar = None
-        self.page.drawer = None
-        self.page.controls.clear()
-        self.page.add(ft.Column([baslik_satiri, self.menu_kutu, sayfa_satiri, self.govde], spacing=0, expand=True))
+        if self.genis:
+            baslik_satiri = ft.Container(ft.Row([
+                logo(120, 44),
+                ft.Column([ft.Text("DÖSE Yönetim", size=18, weight=ft.FontWeight.BOLD, color=METIN),
+                           ft.Text((f"{okul['ad']} · " if okul.get("ad") else "") + f"v{SUR.SURUM}",
+                                   size=12, color=METIN_IKINCIL,
+                                   max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)], spacing=0, expand=True),
+                kullanici,
+                self._lisans_rozeti(okul),
+                ft.Icon(ft.Icons.ACCOUNT_CIRCLE, color=ANA_RENK, size=30),
+                cikis,
+            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.Padding.symmetric(horizontal=16, vertical=10), bgcolor=YUZEY,
+                border=ft.Border.only(bottom=ft.BorderSide(1, KENAR)))
+            self.menu_kutu = ft.Container(self._menu_cubugu(), bgcolor=ANA_RENK)
+            sayfa_satiri = ft.Container(ft.Row([self.sayfa_ikonu, self.sayfa_basligi], spacing=10),
+                                        padding=ft.Padding.only(left=20, right=16, top=12, bottom=0), bgcolor=ZEMIN)
+            self.page.appbar = None
+            self.page.drawer = None
+            self.page.controls.clear()
+            self.page.add(ft.Column([baslik_satiri, self.menu_kutu, sayfa_satiri, self.govde],
+                                    spacing=0, expand=True))
+        else:
+            async def cekmece_ac(_=None):
+                try:
+                    await self.page.show_drawer()
+                except Exception:
+                    pass
+
+            self.page.drawer = self._mobil_cekmece()
+            self.page.appbar = ft.AppBar(
+                leading=ft.IconButton(ft.Icons.MENU, icon_color="#ffffff", on_click=cekmece_ac,
+                                      tooltip="Menü"),
+                title=ft.Text(SAYFA_ADI.get(self.sayfa, "DÖSE"), color="#ffffff",
+                              weight=ft.FontWeight.BOLD, size=16,
+                              max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                bgcolor=ANA_RENK, color="#ffffff",
+                actions=[self._lisans_rozeti(okul), cikis],
+                toolbar_height=48)
+            self.menu_kutu = ft.Container(visible=False)
+            self.page.controls.clear()
+            self.page.add(ft.Column([
+                ft.Container(ft.Row([
+                    uygulama_ikonu(28),
+                    ft.Text((okul.get("ad") or "DÖSE") + f" · v{SUR.SURUM}", size=11, color=METIN_IKINCIL,
+                            expand=True, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=6), bgcolor=YUZEY),
+                self.govde,
+            ], spacing=0, expand=True))
         self._sayfa_basligini_guncelle()
         self.page.update()
 
     def _sayfa_basligini_guncelle(self):
         if getattr(self, "menu_kutu", None) is None:
             return
-        self.menu_kutu.content = self._menu_cubugu()
+        if self.genis and self.menu_kutu.visible is not False:
+            self.menu_kutu.content = self._menu_cubugu()
+        elif not self.genis:
+            self.page.drawer = self._mobil_cekmece()
         self.sayfa_basligi.value = SAYFA_ADI.get(self.sayfa, "DÖSE")
         self.sayfa_ikonu.icon = next((i for a, _, i, _ in SAYFALAR if a == self.sayfa), ft.Icons.HOME)
+        if self.page.appbar is not None and isinstance(self.page.appbar, ft.AppBar):
+            self.page.appbar.title = ft.Text(
+                SAYFA_ADI.get(self.sayfa, "DÖSE"), color="#ffffff",
+                weight=ft.FontWeight.BOLD, size=16,
+                max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
 
     async def sayfa_ac(self, anahtar: str):
         if self.ekran is not None and self.ekran.islemde:

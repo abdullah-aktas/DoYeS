@@ -173,10 +173,10 @@ class DonusumTest(unittest.TestCase):
 class SurumTest(unittest.TestCase):
     def test_surum_karsilastirma(self):
         from istemci import surum as S
-        self.assertEqual(S.SURUM, "1.8.1")
-        self.assertTrue(S.surum_eski("1.7.6", "1.8.1"))
-        self.assertFalse(S.surum_eski("1.8.1", "1.8.1"))
-        self.assertFalse(S.surum_eski("1.9.0", "1.8.1"))
+        self.assertEqual(S.SURUM, "1.8.2")
+        self.assertTrue(S.surum_eski("1.7.6", "1.8.2"))
+        self.assertFalse(S.surum_eski("1.8.2", "1.8.2"))
+        self.assertFalse(S.surum_eski("1.9.0", "1.8.2"))
 
 
 class SecenekTohumTest(unittest.TestCase):
@@ -270,7 +270,7 @@ BEN = {"uye": True, "rol": "Okul Müdürü", "ad_soyad": "Ali Veli", "eposta": "
        "yetkiler": {"kurum": "y", "bolum": "y", "personel": "y", "ogrenci": "g", "cari": "g", "malzeme": "g",
                     "urun": "g", "siparis": "y", "kullanici": "y", "islem_kaydi": "g", "resmi_yazi": "y"},
        "okul": {"id": 1, "ad": "Derik MTAL", "kurum_kodu": "123456", "lisans_bitis": None, "salt_okunur": False},
-       "uygulama": {"surum": "1.8.1", "min_surum": "1.7.0", "duyuru": "", "aktif": False}}
+       "uygulama": {"surum": "1.8.2", "min_surum": "1.7.0", "duyuru": "", "aktif": False}}
 
 
 class ArayuzTest(unittest.TestCase):
@@ -1524,14 +1524,23 @@ class YeniEkranModulleriTest(unittest.TestCase):
         from istemci.ekranlar import TanimEkrani
         kaynak = inspect.getsource(TanimEkrani)
         self.assertIn("Şablon", kaynak)
-        self.assertIn("Dosya / resim yükle", kaynak)
-        self.assertIn("Metin / sesle yaz", kaynak)
+        self.assertIn("Dosya / resim", kaynak)
+        self.assertIn("Metin / ses", kaynak)
+        self.assertIn("PopupMenuButton", kaynak)
         self.assertIn("_ice_aktar_sec", kaynak)
         self.assertIn("_ice_metin_ac", kaynak)
+        self.assertIn("_yerlesim", kaynak)
         self.assertIn("pick_files", kaynak)
         self.assertIn("FilePicker", kaynak)
         self.assertIn("TABLO_ICE_AKTARMA", kaynak)
         self.assertIn("gorsel_ice", kaynak)
+
+    def test_tema_dialog_ve_baslik_wrap(self):
+        from istemci import tema as TM
+        self.assertEqual(TM.dialog_genislik(type("P", (), {"width": 360})(), 480), 328)
+        self.assertEqual(TM.dialog_genislik(type("P", (), {"width": 1200})(), 480), 480)
+        k = TM.sayfa_baslik_satiri("Test", [__import__("flet").OutlinedButton("A")], kompakt=True)
+        self.assertIsNotNone(k)
 
 
 class ExcelIceAktarmaTest(unittest.TestCase):

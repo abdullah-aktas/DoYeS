@@ -565,16 +565,18 @@ class FaturaEkrani(Ekran):
             actions=[vazgec, tersle]))
 
     def _ciz(self):
+        kompakt = not self.app.genis
         kontroller: list[ft.Control] = [
             sayfa_baslik_satiri("Fatura kayıtları", [
-                ft.FilledButton("Yeni satış", icon=ft.Icons.ADD, visible=self.yazabilir, disabled=self.ust is not None,
+                ft.FilledButton("Satış", icon=ft.Icons.ADD, visible=self.yazabilir, disabled=self.ust is not None,
                                 on_click=lambda _: self._yeni("Satış")),
-                ft.FilledButton("Yeni alış", icon=ft.Icons.ADD, visible=self.yazabilir, disabled=self.ust is not None,
+                ft.FilledButton("Alış", icon=ft.Icons.ADD, visible=self.yazabilir, disabled=self.ust is not None,
                                 on_click=lambda _: self._yeni("Alış")),
                 ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", disabled=self.islemde,
                               on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
-                              ft.Icons.RECEIPT_LONG),
-            ft.Text("Buradaki kayıt GİB'e e-Fatura göndermez. Vergi oranlarını ve hesaplarını sayman doğrular."),
+                              ft.Icons.RECEIPT_LONG, kompakt=kompakt),
+            ft.Text("GİB’e e-Fatura göndermez; yerel kayıt ve çıktıdır.",
+                    size=12, visible=not kompakt or self.ust is None),
         ]
         if self.ust is not None:
             form: list[ft.Control] = [ft.Text(f"Yeni {self.tur.lower()} faturası", size=18, weight=ft.FontWeight.BOLD)]
@@ -692,38 +694,47 @@ class FaturaEkrani(Ekran):
                 kaydet.on_click = lambda _: self.app.page.run_task(self._kaydet, kaydet)
                 islemler.insert(1, kaydet)
             form.append(ft.Row(islemler, wrap=True))
-            kontroller.append(ft.Card(ft.Container(ft.Column(form, spacing=12), padding=16)))
-        kontroller.append(ft.Text("Kayıt geçmişi", size=18, weight=ft.FontWeight.BOLD))
-        for f in self.faturalar:
-            baslik = f"{f['tur']} · {f['belge_no']} · {f['cari_unvan']}" + (" · Terslendi" if f["iptal"] else "")
-            satirlar: list[ft.Control] = [
-                ft.Text(baslik, weight=ft.FontWeight.BOLD),
-                ft.Text(f"{T.gosterim('tarih', f['tarih'])} · Matrah {para(f['matrah'])} TL · "
-                        f"KDV {para(f['kdv'])} TL · Net {para(f['net_tutar'])} TL"),
-            ]
-            if f.get("temin_usulu") or f.get("gider_turu"):
-                satirlar.append(ft.Text(
-                    f"Temin: {f.get('temin_usulu') or '—'} · Gider: {f.get('gider_turu') or '—'} · "
-                    f"Belge: {f.get('belge_turu') or '—'}"))
-            if f["tur"] == "Alış" and not f["iptal"]:
-                satirlar.append(ft.TextButton(
-                    "Alım belge özeti (HTML)", disabled=self.ust is not None or self.islemde,
-                    on_click=lambda _, fatura=f: self.app.page.run_task(self._alim_html, fatura)))
-            if not f["iptal"]:
-                satirlar.append(ft.Text(f"Ödenen / tahsil edilen {para(f['odenen'])} TL · Kalan {para(f['kalan'])} TL"))
-                if self.app.yetki("kasa") and Decimal(f["kalan"]) > 0:
+            kontroller.append(ft.Card(ft.Container(ft.Column(form, spacing=10 if kompakt else 12),
+                                                   padding=12 if kompakt else 16)))
+        # Mobilde form açıkken geçmişi gizle — tek işe odaklan
+        if self.ust is None or self.app.genis:
+            kontroller.append(ft.Text("Kayıt geçmişi", size=16 if kompakt else 18, weight=ft.FontWeight.BOLD))
+            for f in self.faturalar:
+                baslik = f"{f['tur']} · {f['belge_no']} · {f['cari_unvan']}" + (" · Terslendi" if f["iptal"] else "")
+                satirlar: list[ft.Control] = [
+                    ft.Text(baslik, weight=ft.FontWeight.BOLD,
+                            max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Text(f"{T.gosterim('tarih', f['tarih'])} · Net {para(f['net_tutar'])} TL"
+                            + ("" if kompakt else f" · Matrah {para(f['matrah'])} · KDV {para(f['kdv'])}")),
+                ]
+                if not kompakt and (f.get("temin_usulu") or f.get("gider_turu")):
+                    satirlar.append(ft.Text(
+                        f"Temin: {f.get('temin_usulu') or '—'} · Gider: {f.get('gider_turu') or '—'} · "
+                        f"Belge: {f.get('belge_turu') or '—'}"))
+                if f["tur"] == "Alış" and not f["iptal"]:
                     satirlar.append(ft.TextButton(
-                        "Kasa / Banka ekranını aç", disabled=self.ust is not None or self.islemde,
-                        on_click=lambda _: self.app.page.run_task(self.app.sayfa_ac, "kasa")))
-            satirlar.extend(ft.Text(f"{k['aciklama']} · {T.siparis_sayisi_yaz(k['miktar'])} {k.get('birim') or ''}"
-                                    f" · {para(k['tutar'])} TL") for k in f["kalemler"])
-            if f["iptal"]:
-                satirlar.append(ft.Text(f"Ters kayıt gerekçesi: {f['ters_gerekce']}"))
-            elif self.yazabilir:
-                satirlar.append(ft.TextButton("Gerekçeli ters kayıt", disabled=self.ust is not None or self.islemde,
-                                              on_click=lambda _, fatura=f: self._ters_dialog(fatura)))
-            kontroller.append(ft.Card(ft.Container(ft.Column(satirlar, spacing=5), padding=12)))
-        if not self.faturalar:
-            kontroller.append(ft.Text("Fatura kaydı yok."))
+                        "Alım belge özeti", disabled=self.ust is not None or self.islemde,
+                        on_click=lambda _, fatura=f: self.app.page.run_task(self._alim_html, fatura)))
+                if not f["iptal"]:
+                    satirlar.append(ft.Text(f"Kalan {para(f['kalan'])} TL"
+                                            + ("" if kompakt else f" · Ödenen {para(f['odenen'])} TL")))
+                    if self.app.yetki("kasa") and Decimal(f["kalan"]) > 0:
+                        satirlar.append(ft.TextButton(
+                            "Kasaya git", disabled=self.ust is not None or self.islemde,
+                            on_click=lambda _: self.app.page.run_task(self.app.sayfa_ac, "kasa")))
+                if not kompakt:
+                    satirlar.extend(
+                        ft.Text(f"{k['aciklama']} · {T.siparis_sayisi_yaz(k['miktar'])} {k.get('birim') or ''}"
+                                f" · {para(k['tutar'])} TL") for k in f["kalemler"])
+                elif f.get("kalemler"):
+                    satirlar.append(ft.Text(f"{len(f['kalemler'])} kalem", size=12, color=ft.Colors.ON_SURFACE_VARIANT))
+                if f["iptal"]:
+                    satirlar.append(ft.Text(f"Ters kayıt: {f['ters_gerekce']}"))
+                elif self.yazabilir:
+                    satirlar.append(ft.TextButton("Ters kayıt", disabled=self.ust is not None or self.islemde,
+                                                  on_click=lambda _, fatura=f: self._ters_dialog(fatura)))
+                kontroller.append(ft.Card(ft.Container(ft.Column(satirlar, spacing=4), padding=10 if kompakt else 12)))
+            if not self.faturalar:
+                kontroller.append(ft.Text("Fatura kaydı yok."))
         self.kontrol.controls = kontroller
         self.guncelle()

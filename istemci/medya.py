@@ -92,9 +92,14 @@ def ses_veya_metin_dialog(
             durum.value = f"Mikrofon kullanılamadı ({e}). Win+H veya yapıştırma deneyin."
         app.page.update()
 
+    try:
+        from .tema import dialog_genislik
+    except ImportError:
+        from tema import dialog_genislik
+    genislik = dialog_genislik(app.page, 520)
     app.page.show_dialog(ft.AlertDialog(
         modal=True, title=ft.Text(baslik),
-        content=ft.Column([alan, durum], tight=True, width=520, height=280),
+        content=ft.Column([alan, durum], tight=True, width=genislik, height=280),
         actions=[
             ft.TextButton("Mikrofon", icon=ft.Icons.MIC, on_click=lambda _: app.page.run_task(mikrofon)),
             ft.TextButton("Vazgeç", on_click=lambda _: app.page.pop_dialog()),

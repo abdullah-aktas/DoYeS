@@ -66,33 +66,53 @@ def giris_kart(*kontroller: ft.Control, genislik_kolon=None) -> ft.Container:
 
 
 def sayfa_baslik_satiri(baslik: str, aksiyonlar: Sequence[ft.Control] | None = None,
-                        ikon=None) -> ft.Control:
-    sol = [ft.Icon(ikon or ft.Icons.DASHBOARD_OUTLINED, color=ANA_RENK, size=26),
-           ft.Text(baslik, size=22, weight=ft.FontWeight.BOLD, color=METIN, expand=True)]
+                        ikon=None, kompakt: bool = False) -> ft.Control:
+    ikon_boyut = 22 if kompakt else 26
+    yazi_boyut = 18 if kompakt else 22
+    sol = [ft.Icon(ikon or ft.Icons.DASHBOARD_OUTLINED, color=ANA_RENK, size=ikon_boyut),
+           ft.Text(baslik, size=yazi_boyut, weight=ft.FontWeight.BOLD, color=METIN, expand=True)]
+    aksiyon_satiri = ft.Row(
+        list(aksiyonlar or []), spacing=6 if kompakt else 10, wrap=True,
+        alignment=ft.MainAxisAlignment.END)
     return ft.Container(
-        ft.Row(sol + list(aksiyonlar or []), spacing=10,
-               vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        ft.Column([
+            ft.Row(sol, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            aksiyon_satiri,
+        ] if aksiyonlar else [ft.Row(sol, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)],
+            spacing=6, tight=True),
         padding=ft.Padding.only(bottom=4))
 
 
+def dialog_genislik(page: ft.Page | None, hedef: int = 480, kenar: int = 32) -> int:
+    """Telefonlarda diyalog taşmasın diye sayfa genişliğine göre sınırlar."""
+    genislik = getattr(page, "width", None) or 0
+    if genislik <= 0:
+        return hedef
+    return max(280, min(hedef, int(genislik) - kenar))
+
+
 def liste_satiri(baslik: str, alt: str = "", secili: bool = False, on_click=None,
-                 trailing: ft.Control | None = None) -> ft.Control:
+                 trailing: ft.Control | None = None, kompakt: bool = False) -> ft.Control:
+    dikey = 6 if kompakt else 8
+    alt_margin = 4 if kompakt else 6
     return ft.Container(
         ft.Row([
             ft.Container(width=4, border_radius=4,
                          bgcolor=ANA_RENK if secili else ft.Colors.TRANSPARENT,
-                         height=44),
+                         height=40 if kompakt else 44),
             ft.Column([
                 ft.Text(baslik, weight=ft.FontWeight.W_600 if secili else ft.FontWeight.W_500,
-                        color=ANA_RENK if secili else METIN, size=14),
-                ft.Text(alt, size=12, color=METIN_IKINCIL, visible=bool(alt)),
+                        color=ANA_RENK if secili else METIN, size=14,
+                        max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                ft.Text(alt, size=12, color=METIN_IKINCIL, visible=bool(alt),
+                        max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
             ], spacing=2, expand=True),
             trailing or ft.Container(width=0),
         ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=dikey),
         bgcolor=SECILI_DOLGU if secili else YUZEY,
         border=ft.Border.all(1, ANA_RENK if secili else KENAR),
-        border_radius=12, ink=True, on_click=on_click, margin=ft.Margin.only(bottom=6))
+        border_radius=12, ink=True, on_click=on_click, margin=ft.Margin.only(bottom=alt_margin))
 
 
 def ozellik_satiri(ikon, metin: str, renk) -> ft.Control:
@@ -133,19 +153,20 @@ def kpi_karti(etiket: str, deger: str, ikon, renk: str = ANA_RENK,
     return ft.Container(
         ft.Column([
             ft.Row([
-                ft.Container(ft.Icon(ikon, color=renk, size=22),
+                ft.Container(ft.Icon(ikon, color=renk, size=20),
                              bgcolor=ft.Colors.with_opacity(0.12, renk),
-                             border_radius=12, width=40, height=40,
+                             border_radius=12, width=36, height=36,
                              alignment=ft.Alignment.CENTER),
-                ft.Text(etiket, size=12, color=METIN_IKINCIL, expand=True),
-            ], spacing=10),
-            ft.Text(deger, size=22, weight=ft.FontWeight.BOLD, color=METIN),
-        ], spacing=10, tight=True),
-        padding=18, bgcolor=YUZEY, border_radius=16,
+                ft.Text(etiket, size=12, color=METIN_IKINCIL, expand=True,
+                        max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+            ], spacing=8),
+            ft.Text(deger, size=20, weight=ft.FontWeight.BOLD, color=METIN),
+        ], spacing=8, tight=True),
+        padding=14, bgcolor=YUZEY, border_radius=14,
         border=ft.Border.all(1, KENAR),
-        shadow=ft.BoxShadow(blur_radius=14, spread_radius=0, offset=ft.Offset(0, 3),
+        shadow=ft.BoxShadow(blur_radius=12, spread_radius=0, offset=ft.Offset(0, 3),
                             color=ft.Colors.with_opacity(0.07, "#000000")),
-        col=genislik_kolon or {"xs": 12, "sm": 6, "md": 4, "lg": 3})
+        col=genislik_kolon or {"xs": 6, "sm": 6, "md": 4, "lg": 3})
 
 
 def oran_cubugu(etiket: str, deger: float, maksimum: float, renk: str,
@@ -168,16 +189,16 @@ def oran_cubugu(etiket: str, deger: float, maksimum: float, renk: str,
     ], spacing=6, tight=True)
 
 
-def kahraman_seridi(baslik_metin: str, alt: str) -> ft.Control:
+def kahraman_seridi(baslik_metin: str, alt: str, kompakt: bool = False) -> ft.Control:
     return ft.Container(
         ft.Column([
-            ft.Text(baslik_metin, size=24, weight=ft.FontWeight.BOLD, color="#ffffff"),
-            ft.Text(alt, size=14, color=ft.Colors.with_opacity(0.9, "#ffffff")),
-        ], spacing=6, tight=True),
-        padding=ft.Padding.symmetric(horizontal=22, vertical=20),
-        border_radius=18,
+            ft.Text(baslik_metin, size=20 if kompakt else 24, weight=ft.FontWeight.BOLD, color="#ffffff"),
+            ft.Text(alt, size=13 if kompakt else 14, color=ft.Colors.with_opacity(0.9, "#ffffff")),
+        ], spacing=4 if kompakt else 6, tight=True),
+        padding=ft.Padding.symmetric(horizontal=16 if kompakt else 22, vertical=14 if kompakt else 20),
+        border_radius=14 if kompakt else 18,
         gradient=ft.LinearGradient(
             begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT,
             colors=[ANA_KOYU, ANA_RENK, ANA_ACIK]),
-        shadow=ft.BoxShadow(blur_radius=20, offset=ft.Offset(0, 6),
+        shadow=ft.BoxShadow(blur_radius=16 if kompakt else 20, offset=ft.Offset(0, 5),
                             color=ft.Colors.with_opacity(0.18, ANA_KOYU)))

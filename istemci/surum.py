@@ -1,7 +1,7 @@
 """İstemci sürüm sabiti — pyproject.toml ile aynı tutulur."""
 from __future__ import annotations
 
-SURUM = "1.8.1"
+SURUM = "1.8.2"
 
 
 def surum_parcala(metin: str | None) -> tuple[int, int, int]:

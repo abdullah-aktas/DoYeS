@@ -1,6 +1,6 @@
 [project]
 name = "dose-mobil"
-version = "1.8.1"
+version = "1.8.2"
 description = "DÖSE Yönetim: okulun döner sermaye işletmesi; masaüstü, telefon ve tarayıcıda Supabase üzerinde tek kayıt"
 authors = [{ name = "Derik MTAL Döner Sermaye İşletmesi" }]
 requires-python = ">=3.10"

@@ -15,15 +15,17 @@ try:
     from . import takvim, tema
     from . import tanimlar as T
     from .supa import SupaHata
-    from .tema import (ANA_RENK, MARKA_VURGU, METIN_IKINCIL, bilgi_karti, kahraman_seridi, kpi_karti,
-                       liste_satiri, oran_cubugu, sayfa_baslik_satiri, yuzey_kart)
+    from .tema import (ANA_RENK, MARKA_VURGU, METIN_IKINCIL, bilgi_karti, dialog_genislik,
+                       kahraman_seridi, kpi_karti, liste_satiri, oran_cubugu, sayfa_baslik_satiri,
+                       yuzey_kart)
 except ImportError:
     import takvim
     import tema
     import tanimlar as T
     from supa import SupaHata
-    from tema import (ANA_RENK, MARKA_VURGU, METIN_IKINCIL, bilgi_karti, kahraman_seridi, kpi_karti,
-                      liste_satiri, oran_cubugu, sayfa_baslik_satiri, yuzey_kart)
+    from tema import (ANA_RENK, MARKA_VURGU, METIN_IKINCIL, bilgi_karti, dialog_genislik,
+                      kahraman_seridi, kpi_karti, liste_satiri, oran_cubugu, sayfa_baslik_satiri,
+                      yuzey_kart)
 
 KLAVYE = {"para": ft.KeyboardType.NUMBER, "ondalik": ft.KeyboardType.NUMBER, "oran": ft.KeyboardType.NUMBER,
           "tarih": ft.KeyboardType.DATETIME}
@@ -131,7 +133,10 @@ class Ekran:
         return False
 
     def guncelle(self):
-        self.app.page.update()
+        try:
+            self.kontrol.update()
+        except Exception:
+            self.app.page.update()
 
     async def guvenli_islem(self, is_, dugme: ft.Control, kilitlenecek: tuple[ft.Control, ...] = ()):
         if self.islemde:
@@ -231,10 +236,12 @@ class AnaEkran(Ekran):
         ozet = self.ozet or {}
         yil = ozet.get("yil") or takvim.bugun_istanbul().year
         ad = (ben.get("ad_soyad") or "").split()[0] if ben.get("ad_soyad") else ""
+        kompakt = not self.app.genis
         c: list[ft.Control] = [
             kahraman_seridi(
                 f"Merhaba{(' ' + ad) if ad else ''}",
-                f"{okul.get('ad') or 'DÖSE'} · {ben.get('rol') or ''} · {yil}"),
+                f"{okul.get('ad') or 'DÖSE'} · {ben.get('rol') or ''} · {yil}",
+                kompakt=kompakt),
         ]
         if okul.get("salt_okunur"):
             c.append(uyari_seridi("Lisans süresi doldu. Kayıtları görebilirsiniz ama değiştiremezsiniz. "
@@ -459,22 +466,42 @@ class TanimEkrani(Ekran):
     def duzen(self):
         self._ciz()
 
+    def _aksiyonlar(self) -> list[ft.Control]:
+        aksiyonlar: list[ft.Control] = []
+        if self.yazabilir and self.tablo in X.TABLO_ICE_AKTARMA:
+            if self.app.genis:
+                aksiyonlar += [
+                    ft.OutlinedButton("Şablon", icon=ft.Icons.TABLE_VIEW, on_click=self._sablon_indir),
+                    ft.OutlinedButton("Dosya / resim", icon=ft.Icons.UPLOAD_FILE, on_click=self._ice_aktar_ac),
+                    ft.OutlinedButton("Metin / ses", icon=ft.Icons.MIC, on_click=self._ice_metin_ac),
+                ]
+            else:
+                aksiyonlar.append(ft.PopupMenuButton(
+                    icon=ft.Icons.UPLOAD_FILE, tooltip="İçe aktar",
+                    items=[
+                        ft.PopupMenuItem(content=ft.Text("Şablon indir"), icon=ft.Icons.TABLE_VIEW,
+                                         on_click=self._sablon_indir),
+                        ft.PopupMenuItem(content=ft.Text("Dosya / resim yükle"), icon=ft.Icons.UPLOAD_FILE,
+                                         on_click=self._ice_aktar_ac),
+                        ft.PopupMenuItem(content=ft.Text("Metin / sesle yaz"), icon=ft.Icons.MIC,
+                                         on_click=self._ice_metin_ac),
+                    ]))
+        if self.yazabilir:
+            aksiyonlar.append(ft.FilledButton("Yeni", icon=ft.Icons.ADD, on_click=self._yeni))
+        aksiyonlar.append(ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", on_click=self._yenile))
+        return aksiyonlar
+
     def _ciz(self):
         self.serit.visible = False
         self._liste_ciz(guncelle=False)
         self._form_ciz()
-        aksiyonlar = []
-        if self.yazabilir and self.tablo in X.TABLO_ICE_AKTARMA:
-            aksiyonlar += [
-                ft.OutlinedButton("Şablon", icon=ft.Icons.TABLE_VIEW, on_click=self._sablon_indir),
-                ft.OutlinedButton("Dosya / resim yükle", icon=ft.Icons.UPLOAD_FILE, on_click=self._ice_aktar_ac),
-                ft.OutlinedButton("Metin / sesle yaz", icon=ft.Icons.MIC, on_click=self._ice_metin_ac),
-            ]
-        if self.yazabilir:
-            aksiyonlar.append(ft.FilledButton("Yeni", icon=ft.Icons.ADD, on_click=self._yeni))
-        aksiyonlar.append(ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", on_click=self._yenile))
-        ust = sayfa_baslik_satiri(self.baslik, aksiyonlar)
-        liste_kolonu = ft.Column([ust, self.arama, self.liste], expand=True, spacing=10)
+        self._yerlesim()
+        self.guncelle()
+
+    def _yerlesim(self):
+        kompakt = not self.app.genis
+        ust = sayfa_baslik_satiri(self.baslik, self._aksiyonlar(), kompakt=kompakt)
+        liste_kolonu = ft.Column([ust, self.arama, self.liste], expand=True, spacing=8 if kompakt else 10)
         if self.app.genis:
             self.kontrol.content = ft.Row([
                 ft.Container(liste_kolonu, width=400),
@@ -483,11 +510,11 @@ class TanimEkrani(Ekran):
                 expand=True, vertical_alignment=ft.CrossAxisAlignment.START)
         else:
             self.kontrol.content = self.form_kutusu if self.form_acik else liste_kolonu
-        self.guncelle()
 
     def _liste_ciz(self, guncelle: bool = True):
         baslik_alani = T.TANIM_BASLIK_ALANI[self.tablo]
         a1, a2 = T.TANIM_ALT_ALANLAR[self.tablo]
+        kompakt = not self.app.genis
         satirlar = []
         for k in self.kayitlar:
             if not T.eslesir(k, self.arama.value or "", self.tablo):
@@ -497,11 +524,14 @@ class TanimEkrani(Ekran):
                 alt = ("Pasif · " + alt) if alt else "Pasif"
             secili = bool(self.secili and self.secili["id"] == k["id"])
             satirlar.append(liste_satiri(
-                k.get(baslik_alani) or "(adsız)", alt, secili=secili,
+                k.get(baslik_alani) or "(adsız)", alt, secili=secili, kompakt=kompakt,
                 on_click=lambda _, kayit=k: self._sec(kayit)))
         self.liste.controls = satirlar or [ft.Text("Kayıt yok.", color=METIN_IKINCIL)]
         if guncelle:
-            self.guncelle()
+            try:
+                self.liste.update()
+            except Exception:
+                self.guncelle()
 
     def _form_ciz(self):
         if not self.form_acik:
@@ -519,9 +549,12 @@ class TanimEkrani(Ekran):
                              on_click=self._kapat)
         ad = (self.secili or {}).get(T.TANIM_BASLIK_ALANI[self.tablo]) if self.secili else "Yeni kayıt"
         self.form_kutusu.controls = [
-            ft.Row([geri, ft.Text(ad or "", size=18, weight=ft.FontWeight.BOLD, color=tema.METIN, expand=True)]),
+            ft.Row([geri, ft.Text(ad or "", size=17 if not self.app.genis else 18,
+                                  weight=ft.FontWeight.BOLD, color=tema.METIN, expand=True,
+                                  max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)]),
             self.serit, son_degisiklik(self.secili),
-            yuzey_kart(self.form.kontrol, ft.Row([kaydet, sil], wrap=True), padding=16)]
+            yuzey_kart(self.form.kontrol, ft.Row([kaydet, sil], wrap=True),
+                       padding=12 if not self.app.genis else 16)]
 
     def _picker_hazirla(self):
         if self._picker is None:
@@ -619,9 +652,10 @@ class TanimEkrani(Ekran):
             self.app.page.pop_dialog()
             await self._ice_toplu_kaydet()
 
+        genislik = dialog_genislik(self.app.page, 480)
         self.app.page.show_dialog(ft.AlertDialog(
             modal=True, title=ft.Text(f"{len(kayitlar)} satır bulundu"),
-            content=ft.Column(satirlar, tight=True, scroll=ft.ScrollMode.AUTO, height=280, width=480),
+            content=ft.Column(satirlar, tight=True, scroll=ft.ScrollMode.AUTO, height=280, width=genislik),
             actions=[ft.TextButton("Vazgeç", on_click=lambda _: self.app.page.pop_dialog()),
                      ft.FilledButton("İçe aktar", icon=ft.Icons.SAVE, on_click=kaydet)]))
 
@@ -630,9 +664,10 @@ class TanimEkrani(Ekran):
         satirlar += [ft.Text(h, size=12, color="#b3261e") for h in hatalar[:25]]
         if len(hatalar) > 25:
             satirlar.append(ft.Text(f"… ve {len(hatalar) - 25} hata daha", size=12, color=METIN_IKINCIL))
+        genislik = dialog_genislik(self.app.page, 520)
         self.app.page.show_dialog(ft.AlertDialog(
             modal=True, title=ft.Text("İçe aktarma sonucu"),
-            content=ft.Column(satirlar, tight=True, scroll=ft.ScrollMode.AUTO, height=320, width=520),
+            content=ft.Column(satirlar, tight=True, scroll=ft.ScrollMode.AUTO, height=320, width=genislik),
             actions=[ft.TextButton("Tamam", on_click=lambda _: self.app.page.pop_dialog())]))
 
     async def _ice_toplu_kaydet(self):
@@ -706,15 +741,23 @@ class TanimEkrani(Ekran):
 
     def _sec(self, kayit: dict):
         self.secili, self.form_acik = kayit, True
-        self._ciz()
+        self._liste_ciz(guncelle=False)
+        self._form_ciz()
+        self._yerlesim()
+        self.guncelle()
 
     def _yeni(self, _=None):
         self.secili, self.form_acik = None, True
-        self._ciz()
+        self._form_ciz()
+        self._yerlesim()
+        self.guncelle()
 
     def _kapat(self, _=None):
         self.form_acik = False
-        self._ciz()
+        self._liste_ciz(guncelle=False)
+        self._form_ciz()
+        self._yerlesim()
+        self.guncelle()
 
     async def _yenile(self, _=None):
         await self.app.guvenli(self.yukle)
@@ -830,21 +873,24 @@ class SiparisEkrani(Ekran):
         self.serit.visible = False
         secili_id = self.secili["id"] if self.secili else None
         satirlar = [ft.ListTile(
-            title=ft.Text(f"{s.get('siparis_no')} · {s.get('konu') or ''}"),
+            title=ft.Text(f"{s.get('siparis_no')} · {s.get('konu') or ''}",
+                          max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
             subtitle=ft.Text(f"{s.get('cari_unvan') or ''} · {s.get('bolum_ad') or ''} · "
                              f"{T.sayi_yaz(Decimal(str(self._kesin_deger(s, 'sozlesme_bedeli', 0))))} TL · "
-                             f"{s.get('onay_durumu') or s.get('durum') or ''}"),
-            selected=s.get("id") == secili_id,
+                             f"{s.get('onay_durumu') or s.get('durum') or ''}",
+                             max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+            selected=s.get("id") == secili_id, dense=not self.app.genis,
             on_click=lambda _, kayit=s: self._sec(kayit)) for s in self.kayitlar]
         if not satirlar:
             satirlar = [ft.Text("Henüz sipariş yok.", color=ft.Colors.ON_SURFACE_VARIANT)]
+        liste_govde = ft.ListView(satirlar, expand=True, spacing=0)
         self.liste = ft.Column([
             sayfa_baslik_satiri("Sipariş / iş emirleri", [
-                ft.FilledButton("Yeni sipariş", icon=ft.Icons.ADD, visible=self.yazabilir, on_click=self._yeni),
+                ft.FilledButton("Yeni", icon=ft.Icons.ADD, visible=self.yazabilir, on_click=self._yeni),
                 ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile", on_click=self._yenile)],
-                              ft.Icons.ASSIGNMENT),
-            *satirlar],
-            expand=True, scroll=ft.ScrollMode.AUTO, spacing=4)
+                              ft.Icons.ASSIGNMENT, kompakt=not self.app.genis),
+            liste_govde],
+            expand=True, spacing=4)
         self._form_ciz()
         self._yerlesim()
         self.guncelle()
@@ -1301,6 +1347,7 @@ class KullaniciEkrani(Ekran):
 
     def _dialog(self, baslik: str, kontroller: list, etiket: str, is_, genislik: int = 420):
         dugme = ft.FilledButton(etiket)
+        genislik = dialog_genislik(self.app.page, genislik)
 
         async def tik(_):
             if await self.app.guvenli(is_, dugme):
@@ -1361,17 +1408,20 @@ class IslemKaydiEkrani(Ekran):
                                            sira="id.desc", limit=200)
         liste = [ft.ListTile(
             title=ft.Text(f"{s.get('islem') or ''} · {s.get('tablo') or ''}"
-                          f"{' #' + str(s['kayit_id']) if s.get('kayit_id') else ''}"),
+                          f"{' #' + str(s['kayit_id']) if s.get('kayit_id') else ''}",
+                          max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
             subtitle=ft.Text(f"{s.get('zaman') or ''} — {s.get('ad_soyad') or ''}"
                              f"{' (' + s['rol'] + ')' if s.get('rol') else ''}"
-                             f"{chr(10) + s['detay'] if s.get('detay') else ''}"),
+                             f"{chr(10) + s['detay'] if s.get('detay') else ''}",
+                             max_lines=3, overflow=ft.TextOverflow.ELLIPSIS),
             dense=True) for s in satirlar]
+        self.kontrol.scroll = None
         self.kontrol.controls = [
             sayfa_baslik_satiri("İşlem kaydı", [
                 ft.IconButton(ft.Icons.REFRESH, tooltip="Yenile",
                               on_click=lambda _: self.app.page.run_task(self.app.guvenli, self.yukle))],
-                              ft.Icons.HISTORY),
-            ft.Text("Kim, hangi rolde, neyi, ne zaman yaptı. Bu kayıt değiştirilemez ve silinemez. Son 200 işlem.",
+                              ft.Icons.HISTORY, kompakt=not self.app.genis),
+            ft.Text("Kim, hangi rolde, neyi, ne zaman yaptı. Son 200 işlem; değiştirilemez.",
                     size=12, color=ft.Colors.ON_SURFACE_VARIANT),
-            *(liste or [ft.Text("Henüz işlem yok.")])]
+            ft.ListView(liste or [ft.Text("Henüz işlem yok.")], expand=True, spacing=0)]
         self.guncelle()

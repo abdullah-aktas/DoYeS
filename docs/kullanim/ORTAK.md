@@ -45,6 +45,8 @@ PDF: metin tabanlı tablo tercih edilir. Tarama / belge resmi için cihazda **Te
 
 Güncelleme duyurusunu **Tamam** veya şeritteki kapatma ile işaretlerseniz aynı sürüm duyurusu bir daha çıkmaz.
 
+Telefonda menü hamburger ile açılır. Tanımlarda içe aktarma tek menüdedir; kayıt seçince form açılır, geri ile listeye dönersiniz.
+
 ## Yazdırma ve belgeler
 
 - Parça başı, fazla çalışma, hazine, resmi yazı vb. ekranlarda **Belgeler** menüsü HTML üretir.

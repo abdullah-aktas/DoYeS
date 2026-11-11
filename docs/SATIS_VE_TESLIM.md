@@ -48,8 +48,8 @@ Hepsi yeşil olmadan canlıya paket çıkarmayın.
 
 ## 2. Her sürüm / satış öncesi: ürünü kilitleyin
 
-1. `istemci/pyproject.toml` ve `istemci/surum.py` → `version` / `SURUM` numarasını güncelleyin (ör. `1.8.1`).
-   Sunucu duyurusu: SQL Editor’da `select dose_private.uygulama_ayarla('1.8.1', 'Duyuru metni…', 45, 'https://…/releases/tag/v1.8.1');`
+1. `istemci/pyproject.toml` ve `istemci/surum.py` → `version` / `SURUM` numarasını güncelleyin (ör. `1.8.2`).
+   Sunucu duyurusu: SQL Editor’da `select dose_private.uygulama_ayarla('1.8.2', 'Duyuru metni…', 45, 'https://…/releases/tag/v1.8.2');`
 2. Son migration’lar canlıda: `cd supabase && npx supabase db push`.
 3. Testleri tekrar çalıştırın (§1 sonu).
 4. Deneme okulunda uçtan uca duman testi:
